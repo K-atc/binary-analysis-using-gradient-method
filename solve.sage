@@ -38,14 +38,6 @@ def D_x_f(f, x):
         res.append(row)
     return matrix(res).transpose()
 
-def r_N_r_xi(N, x, i):
-    ret = []
-    dxi = zero_vector(len(x))
-    dxi[i] = 1
-    for j in range(len(N(x))):
-        ret.append((N(x + dxi)[j] - N(x)[j]) / dxi.norm())
-    return vector(ret)
-
 """
 char[] x; // symbolized
 unsigned int x_len = strlen(x);
@@ -63,14 +55,14 @@ print("∇L = {}".format(grad_L))
 max_trial = 40
 x, y = [None for x in range(max_trial + 1)], [None for x in range(max_trial + 1)]
 
-x[0] = vector([0, 0, 0, 0])
+x[0] = zero_vector(8)
 
 for k in range(max_trial):
     y[k] = N(x[k])
     print("x[{}] = {}".format(k, x[k]))
     print("y[{}] = {}".format(k, y[k]))
 
-    print("L(y[k])) = {}".format(L(*y[k])))
+    print("L(y[{}])) = {}".format(k, L(*y[k])))
     if L(*N(x[k])) <= 1e-2: 
         print("\n[*] found!! x = {}".format(x[k]))
         break 
