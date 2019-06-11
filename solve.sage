@@ -4,8 +4,8 @@
 class UnexpectedException(Exception):
     pass
 
-alpha = 1e-4
-beta = -1e-4
+alpha = 1e-6
+beta = -1e-6
 epsilon = 1
 
 L_a_lt_b(a, b) = max(a - b + alpha, 0)
@@ -24,12 +24,26 @@ def strlen(x):
     return len(x)
     raise UnexpectedException()
 
+def D_x_f(f, x):
+    n = len(x)
+    m = len(f(x))
+    res = []
+    # NOTE: Calcuate transpose of $D_x f$
+    for i in range(n):
+        row = []
+        dxi = zero_vector(n)
+        dxi[i] = 1
+        for j in range(m):
+            row.append((N(x + dxi)[j] - N(x)[j]) / dxi.norm())
+        res.append(row)
+    return matrix(res).transpose()
+
 def r_N_r_xi(N, x, i):
     ret = []
-    dxi = vector([0 for _ in range(len(x))])
+    dxi = zero_vector(len(x))
     dxi[i] = 1
     for j in range(len(N(x))):
-        ret.append(N(x + dxi)[j] - N(x)[j])
+        ret.append((N(x + dxi)[j] - N(x)[j]) / dxi.norm())
     return vector(ret)
 
 """
@@ -58,14 +72,9 @@ for k in range(max_trial):
 
     print("L(y[k])) = {}".format(L(*y[k])))
     if L(*N(x[k])) <= 1e-2: 
-        print("found!!")
+        print("\n[*] found!! x = {}".format(x[k]))
         break 
 
-    grad_L_N_x = vector([
-        grad_L(*y[k]).dot_product(r_N_r_xi(N, x[k], 0)),
-        grad_L(*y[k]).dot_product(r_N_r_xi(N, x[k], 1)),
-        grad_L(*y[k]).dot_product(r_N_r_xi(N, x[k], 2)),
-        grad_L(*y[k]).dot_product(r_N_r_xi(N, x[k], 3)),
-    ])
+    grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
     x[k + 1] = x[k] - epsilon * grad_L_N_x
     # print("x[k+1] - x[k] = {}".format(x[k + 1] - x[k]))
