@@ -1,8 +1,26 @@
 #!/usr/bin/sage
 #coding: utf8
 
+import time
+
 class UnexpectedException(Exception):
     pass
+
+class Statistics:
+    lap_time = []
+    start_time = 0
+
+    def __init__(self):
+        pass
+
+    def lap_start(self):
+        self.start_time = time.time()
+    
+    def lap_end(self):
+        end_time = time.time()
+        self.lap_time.append(end_time - self.start_time)
+
+stat = Statistics()
 
 alpha = 1e-6
 beta = -1e-6
@@ -43,15 +61,19 @@ def NeuSolv(N, L, x0):
     x[0] = x0
 
     for k in range(max_trial):
+        stat.lap_start()
+
         y[k] = N(x[k])
         print("x[{}] = {}".format(k, x[k]))
         print("y[{}] = {}".format(k, y[k]))
 
         print("L(y[{}])) = {}".format(k, L(*y[k])))
         if L(*N(x[k])) <= 1e-2: 
-            print("\n[*] found!! x = {}".format(x[k]))
             return x[k]
 
         grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
         x[k + 1] = x[k] - epsilon * grad_L_N_x
-        # print("x[k+1] - x[k] = {}".format(x[k + 1] - x[k]))
+
+        stat.lap_end()
+
+    return None

@@ -64,22 +64,34 @@ def vector_to_string(v):
         exit(1)
 
 def test(N):
+    print()
     print("[*] test")
     x = X(args=['aaa'])
     y = p.call(x)
     print("y = {}".format(y))
 
 def main(N):
+    print()
     print("[*] main")
 
+    ### Define loss function
     var('x_0 x_len')
     L(x_0, x_len) = L_a_eq_b(x_0, ord('#')) + L_a_eq_b(x_len, 3)
 
+    ### Solve constrants
     model = NeuSolv(N, L, zero_vector(8))
 
-    print("model: {}".format(model))
-    # print("-> {!r}".format(vector_to_string(model)))
-    print("-> {!r}".format(xadapter(model)))
+    print("=" * 8)
+    if model:
+        print("[*] found")
+        print("model: {}".format(model))
+        # print("-> {!r}".format(vector_to_string(model)))
+        print("-> {!r}".format(xadapter(model)))
+    else:
+        print("[*] not found")
+
+    print("-" * 8)
+    print("Lap Time: {}".format(stat.lap_time))
 
 if __name__ == "__main__":
     p = Program('sample/simple-if-statement-tree2', xadapter)
