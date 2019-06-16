@@ -1,4 +1,4 @@
-TARGET=simple-if-statement-tree
+TARGET=simple-if-statement-tree simple-elf-checker
 
 all: $(TARGET)
 

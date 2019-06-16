@@ -1,6 +1,7 @@
 #!/usr/bin/sage
 #coding: utf8
-
+import subprocess
+import json
 import time
 
 class UnexpectedException(Exception):
@@ -21,6 +22,52 @@ class Statistics:
         self.lap_time.append(end_time - self.start_time)
 
 stat = Statistics()
+
+class X():
+    def __init__(self, args=[], stdin=None, files={}):
+        self.args = args
+        self.stdin = stdin
+        self.files = files
+
+    def __repr__(self):
+        return "{}(args={}, stdin={}, files={})".format(self.__class__.__name__, self.args, self.stdin, self.files)
+
+class Program:
+    def __init__(self, program, xadapter, yadapter):
+        assert isinstance(program, str), "'program` must be a path to program"
+        assert callable(xadapter), "`adapter` must be a fucntion"
+        self.program = program
+        self.xadapter = xadapter
+        self.yadapter = yadapter
+
+    def call(self, x):
+        assert isinstance(x, X), "fail: x = {}".format(x)
+        p = subprocess.Popen([self.program] + x.args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stdin = p.communicate()
+        for x in stdout.split(b'\n'):
+            if x.startswith(b'{'):
+                y = json.loads(x)
+        assert y
+        return y
+
+    def call_with_adapter(self, x):
+        return self.yadapter(self.call(self.xadapter(x)))
+
+def strip_null(s):
+    first_null_pos = s.find('\x00')
+    return s[:first_null_pos]
+
+def vector_to_string(v):
+    try:
+        s = ''.join(map(lambda _: chr(_) if _ > 0 else '\x00', v.list()))
+        return s
+    except Exception, e:
+        import traceback
+        print("\nException: {} {}".format(e.__class__.__name__, v))
+        traceback.print_exc()
+        print("-> v = {}".format(v))
+        exit(1)
+
 
 alpha = 1e-6
 beta = -1e-6
