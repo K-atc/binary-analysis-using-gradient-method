@@ -1,72 +1,64 @@
-#!/usr/bin/sage
-#coding: utf8
+import subprocess
+import os, sys
+import json
 
-class UnexpectedException(Exception):
-    pass
+from engine import *
 
-alpha = 1e-6
-beta = -1e-6
-epsilon = 1
+class X():
+    def __init__(self, args=[], stdin=None, files={}):
+        self.args = args
+        self.stdin = stdin
+        self.files = files
 
-L_a_lt_b(a, b) = max(a - b + alpha, 0)
-L_a_gt_b(a, b) = max(b - a + alpha, 0)
-L_a_le_b(a, b) = max(a - b, 0)
-L_a_ge_b(a, b) = max(b - a, 0)
-L_a_eq_b(a, b) = abs(a - b + alpha)
-L_a_ne_b(a, b) = max(-1, -1 * abs(a - b + beta))
-L_land(L_S1, L_S2) = L_S1 + L_S2
-L_lor(L_S1, L_S2) = min(L_S1, L_S2)
+    def __str__(self):
+        return "(args={}, stdin={}, files={})".format(self.args, self.stdin, self.files)
 
-def strlen(x):
-    for i in range(len(x)):
-        if x[i] <= 0:
-            return i
-    return len(x)
-    raise UnexpectedException()
+class Program:
+    def __init__(self, program):
+        assert isinstance(program, str)
+        self.program = program
 
-def D_x_f(f, x):
-    n = len(x)
-    m = len(f(x))
-    res = []
-    # NOTE: Calcuate transpose of $D_x f$
-    for i in range(n):
-        row = []
-        dxi = zero_vector(n)
-        dxi[i] = 1
-        for j in range(m):
-            row.append((N(x + dxi)[j] - N(x)[j]) / dxi.norm())
-        res.append(row)
-    return matrix(res).transpose()
+    def call(self, x):
+        assert isinstance(x, X), "fail: x = {}".format(x)
+        p = subprocess.Popen([self.program] + x.args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stdin = p.communicate()
+        # print(stdout)
 
-"""
-char[] x; // symbolized
-unsigned int x_len = strlen(x);
-assert(x[0] == 2 && x_len = 3);
-"""
-print("-" * 8)
+        y = {}
+        for x in stdout.split(b'\n'):
+            if x.startswith(b'{'):
+                y = json.loads(x)
+        return [y['x_0'], y['x_len']]
 
-var('x_len x_0')
-N = lambda x: [x[0], strlen(x)]
-L(x_0, x_len) = L_a_eq_b(x_0, 2) + L_a_eq_b(x_len, 3)
-grad_L = L.gradient()
-print("L = {}".format(L))
-print("∇L = {}".format(grad_L))
+def strip_null(s):
+    first_null_pos = s.find('\x00')
+    return s[:first_null_pos]
 
-max_trial = 40
-x, y = [None for x in range(max_trial + 1)], [None for x in range(max_trial + 1)]
+def adapter(x):
+    # print("adapter: x = {}".format(x))
+    try:
+        v = ''.join(map(lambda v: chr(v) if v > 0 else '\x00', x.list()))
+        v = strip_null(v)
+        return X(args=[v]) # sage var -> program input
+    except Exception, e:
+        import traceback
+        print("\nException: {} {}".format(e.__class__.__name__, e))
+        traceback.print_exc()
+        print("-> x = {}".format(x))
+        exit(1)
 
-x[0] = zero_vector(8)
+def main():
+    p = Program('sample/simple-if-statement-tree2')
+    N = p.call
 
-for k in range(max_trial):
-    y[k] = N(x[k])
-    print("x[{}] = {}".format(k, x[k]))
-    print("y[{}] = {}".format(k, y[k]))
+    var('x_0 x_len')
+    L(x_0, x_len) = L_a_eq_b(x_0, ord('#')) + L_a_eq_b(x_len, 3)
 
-    print("L(y[{}])) = {}".format(k, L(*y[k])))
-    if L(*N(x[k])) <= 1e-2: 
-        print("\n[*] found!! x = {}".format(x[k]))
-        break 
+    x = X(args=['aaa'])
+    y = N(x)
+    print("y = {}".format(y))
 
-    grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
-    x[k + 1] = x[k] - epsilon * grad_L_N_x
-    # print("x[k+1] - x[k] = {}".format(x[k + 1] - x[k]))
+    NeuSolv(N, L, zero_vector(8), adapter)
+
+if __name__ == "__main__":
+    main()

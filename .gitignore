@@ -1,2 +1,13 @@
 /.vscode
+/.vagrant
 *.sage.py
+*.tar.gz
+/pin-*
+.gdb_history
+peda-session-*.txt
+*.pyc
+ubuntu-bionic-18.04-cloudimg-console.log
+*.so
+*.xz
+
+/engine.py

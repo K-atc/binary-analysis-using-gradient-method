@@ -1,0 +1,4 @@
+python-ptrace
+frida-tools
+lief
+r2pipe

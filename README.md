@@ -3,3 +3,14 @@
 
 ```
 ```
+
+```shell
+### install frida-gadget
+wget https://github.com/frida/frida/releases/download/12.6.6/frida-gadget-12.6.6-linux-x86_64.so.xz
+unxz frida-gadget-12.6.6-linux-x86_64.so.xz 
+```
+
+```shell
+### compile engine.py
+sage -preparse engine.sage && mv engine.sage.py engine.py
+```
