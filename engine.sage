@@ -17,9 +17,9 @@ L_a_ne_b(a, b) = max_symbolic(-1, -1 * abs(a - b + beta))
 L_land(L_S1, L_S2) = L_S1 + L_S2
 L_lor(L_S1, L_S2) = min_symbolic(L_S1, L_S2)
 
-def D_x_f(f, x, adapter):
+def D_x_f(f, x):
     n = len(x)
-    m = len(f(adapter(x)))
+    m = len(f(x))
     res = []
     # NOTE: Calcuate transpose of $D_x f$
     for i in range(n):
@@ -27,11 +27,11 @@ def D_x_f(f, x, adapter):
         dxi = zero_vector(n)
         dxi[i] = 1
         for j in range(m):
-            row.append((f(adapter(x + dxi))[j] - f(adapter(x))[j]) / dxi.norm())
+            row.append((f(x + dxi)[j] - f(x)[j]) / dxi.norm())
         res.append(row)
     return matrix(res).transpose()
 
-def NeuSolv(N, L, x0, adapter):
+def NeuSolv(N, L, x0):
     
     grad_L = L.gradient()
     print("L = {}".format(L))
@@ -43,15 +43,15 @@ def NeuSolv(N, L, x0, adapter):
     x[0] = x0
 
     for k in range(max_trial):
-        y[k] = N(adapter(x[k]))
+        y[k] = N(x[k])
         print("x[{}] = {}".format(k, x[k]))
         print("y[{}] = {}".format(k, y[k]))
 
         print("L(y[{}])) = {}".format(k, L(*y[k])))
-        if L(*N(adapter(x[k]))) <= 1e-2: 
+        if L(*N(x[k])) <= 1e-2: 
             print("\n[*] found!! x = {}".format(x[k]))
             return x[k]
 
-        grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k], adapter)
+        grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
         x[k + 1] = x[k] - epsilon * grad_L_N_x
         # print("x[k+1] - x[k] = {}".format(x[k + 1] - x[k]))
