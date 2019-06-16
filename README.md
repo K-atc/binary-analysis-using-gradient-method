@@ -1,8 +1,8 @@
 最急降下法を制約ソルバーに用いたシンボリック実行
 ====
 
-```
-./solve.sh
+```shell
+./solve.sh SOLVER_SAGE_FILE
 ```
 
 ```shell

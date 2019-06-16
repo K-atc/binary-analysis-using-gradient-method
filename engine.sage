@@ -24,13 +24,15 @@ class Statistics:
 stat = Statistics()
 
 class X():
-    def __init__(self, args=[], stdin=None, files={}):
+    def __init__(self, args=[], stdin='', files={}):
+        assert isinstance(args, list)
+        assert isinstance(stdin, str)
         self.args = args
         self.stdin = stdin
         self.files = files
 
     def __repr__(self):
-        return "{}(args={}, stdin={}, files={})".format(self.__class__.__name__, self.args, self.stdin, self.files)
+        return "{}(args={!r}, stdin={!r}, files={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files)
 
 class Program:
     def __init__(self, program, xadapter, yadapter):
@@ -42,8 +44,10 @@ class Program:
 
     def call(self, x):
         assert isinstance(x, X), "fail: x = {}".format(x)
-        p = subprocess.Popen([self.program] + x.args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stdin = p.communicate()
+        p = subprocess.Popen([self.program] + x.args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stdin = p.communicate(x.stdin)
+        # print(stdout)
+        y = {}
         for x in stdout.split(b'\n'):
             if x.startswith(b'{'):
                 y = json.loads(x)
@@ -51,6 +55,7 @@ class Program:
         return y
 
     def call_with_adapter(self, x):
+        # print("call_with_adpter: x = {}".format(x))
         return self.yadapter(self.call(self.xadapter(x)))
 
 def strip_null(s):
@@ -71,10 +76,9 @@ def vector_to_string(v):
 
 alpha = 1e-6
 beta = -1e-6
-epsilon = 1
 
-L_a_lt_b(a, b) = max_symbolic(a - b + alpha, 0)
-L_a_gt_b(a, b) = max_symbolic(b - a + alpha, 0)
+L_a_lt_b(a, b) = max(a - b + alpha, 0) # S ::= a < b
+L_a_gt_b(a, b) = max(b - a + alpha, 0) # S ::= a > b
 L_a_le_b(a, b) = max_symbolic(a - b, 0)
 L_a_ge_b(a, b) = max_symbolic(b - a, 0)
 L_a_eq_b(a, b) = abs(a - b + alpha)
@@ -91,23 +95,28 @@ def D_x_f(f, x):
         row = []
         dxi = zero_vector(n)
         dxi[i] = 1
+        f_x_plus_dxi = f(x + dxi)
+        f_x = f(x)
         for j in range(m):
-            row.append((f(x + dxi)[j] - f(x)[j]) / dxi.norm())
+            row.append((f_x_plus_dxi[j] - f_x[j]) / dxi.norm())
         res.append(row)
     return matrix(res).transpose()
 
 def NeuSolv(N, L, x0):
+    epsilon = 0.5
+    gamma = 0.9
     
     grad_L = L.gradient()
     print("L = {}".format(L))
     print("∇L = {}".format(grad_L))
 
-    max_trial = 50
+    max_trial = 300
     x, y = [None for x in range(max_trial + 1)], [None for x in range(max_trial + 1)]
 
     x[0] = x0
+    x[1] = x0
 
-    for k in range(max_trial):
+    for k in range(1, max_trial):
         stat.lap_start()
 
         y[k] = N(x[k])
@@ -119,7 +128,8 @@ def NeuSolv(N, L, x0):
             return x[k]
 
         grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
-        x[k + 1] = x[k] - epsilon * grad_L_N_x
+        x[k + 1] = x[k] + gamma * (x[k] - x[k - 1]) - epsilon * grad_L_N_x # Momentum
+        # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
 
         stat.lap_end()
 
