@@ -1,4 +1,4 @@
-TARGET=simple-if-statement-tree2
+TARGET=simple-if-statement-tree
 
 all: $(TARGET)
 
@@ -7,4 +7,4 @@ all: $(TARGET)
 	objdump -Mintel -d $@ > $@.s
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) *.s

@@ -94,7 +94,7 @@ def main(N):
     print("Lap Time: {}".format(stat.lap_time))
 
 if __name__ == "__main__":
-    p = Program('sample/simple-if-statement-tree2', xadapter)
+    p = Program('sample/simple-if-statement-tree', xadapter)
     N = p.call_with_xadapter
     test(N)
     main(N)
