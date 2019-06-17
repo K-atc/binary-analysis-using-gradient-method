@@ -35,6 +35,8 @@ int main(int argc, char *argv[]) {
         printf("usage: %s STRING\n", argv[0]);
         exit(1);
     }
+    printf("[*] main = %p\n", main);
+
     char *x = argv[1];
     unsigned int x_len = strlen(x);
     printf("{\"%s\":%d,\"%s\":%d}\n", "x_0",x[0],  "x_len", x_len);

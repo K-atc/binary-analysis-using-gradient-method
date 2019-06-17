@@ -4,6 +4,8 @@ import signal
 import subprocess
 import sys, os
 import time
+import struct
+import json
 
 def debugger_example(pid):
     debugger = ptrace.debugger.PtraceDebugger()
@@ -20,31 +22,44 @@ def debugger_example(pid):
             break
 
     print("Add breakpoint")
-    process.createBreakpoint(text_base_addr + 0xa76)
-
-    time.sleep(1)
+    bp0 = process.createBreakpoint(text_base_addr + 0x7d2) # cmp inst
+    bp1 = process.createBreakpoint(text_base_addr + 0x7d6) # cmp inst
+    print("breakpoints = {:#x}, {:#x}".format(bp0.address, bp1.address))
 
     print("cont()")
     process.cont()
 
-    print("send signal")
-    os.kill(pid, signal.SIGUSR1)
+    print("wait signal")
+    process.waitSignals(signal.SIGINT, signal.SIGTRAP)
+
+    print("hit breakpoint")
+    print("pc = {:#x}".format(process.getInstrPointer()))
+    process.removeBreakpoint(bp0)
+    print("print registers")
+    regs = process.getregs()
+    print("rax = {:#x}".format(regs.rax))
+    print("al = {:#x}".format(process.getreg('al')))
+    x_0 = process.getreg('al')
+
+    print("cont()")
+    process.cont()
 
     print("wait signal")
-    # process.waitSignals(signal.SIGTRAP)
-    # process.cont()
-    # process.waitSignals(signal.SIGINT, signal.SIGTRAP)
-    process.waitSignals(signal.SIGUSR1)
-    print("IP after: %#x" % process.getInstrPointer())
-    
-    print("send signal")
-    os.kill(pid, signal.SIGUSR1)
+    process.waitSignals(signal.SIGINT, signal.SIGTRAP, signal.SIGSEGV)
+
+    print("hit breakpoint")
+    process.removeBreakpoint(bp1)
+    print("pc = {:#x}".format(process.getInstrPointer()))
+    regs = process.getregs()
+    x_len = struct.unpack('<I', process.readBytes(regs.rbp - 0xc, 4))[0]
+
+    print("py: {}".format(json.dumps({'x_0': x_0, 'x_len': x_len})))
 
     process.detach()
     debugger.quit()
 
 def main():
-    args = ["sample/simple-if-statement-tree2", "aaa"]
+    args = ["sample/simple-if-statement-tree", "#aa"]
     tracee = subprocess.Popen(args)
     debugger_example(tracee.pid)
     tracee.kill()

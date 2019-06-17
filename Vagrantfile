@@ -71,5 +71,4 @@ Vagrant.configure("2") do |config|
     # ln -f -s /usr/bin/pip3 /usr/bin/pip
     pip3 install -r /vagrant/requirements.txt
   SHELL
-endp
-""
+end
