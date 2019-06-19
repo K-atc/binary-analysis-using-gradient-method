@@ -34,7 +34,7 @@ def debugger_example(pid):
 
     print("hit breakpoint")
     print("pc = {:#x}".format(process.getInstrPointer()))
-    process.removeBreakpoint(bp0)
+    # process.removeBreakpoint(bp0) # optional
     print("print registers")
     regs = process.getregs()
     print("rax = {:#x}".format(regs.rax))
@@ -48,7 +48,7 @@ def debugger_example(pid):
     process.waitSignals(signal.SIGINT, signal.SIGTRAP, signal.SIGSEGV)
 
     print("hit breakpoint")
-    process.removeBreakpoint(bp1)
+    # process.removeBreakpoint(bp1) # optional
     print("pc = {:#x}".format(process.getInstrPointer()))
     regs = process.getregs()
     x_len = struct.unpack('<I', process.readBytes(regs.rbp - 0xc, 4))[0]
@@ -59,7 +59,7 @@ def debugger_example(pid):
     debugger.quit()
 
 def main():
-    args = ["sample/simple-if-statement-tree", "#aa"]
+    args = ["sample/simple-if-statement-tree", "#aab"]
     tracee = subprocess.Popen(args)
     debugger_example(tracee.pid)
     tracee.kill()

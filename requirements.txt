@@ -2,3 +2,6 @@ python-ptrace
 frida-tools
 lief
 r2pipe
+angr
+ipdb
+angr-utils
