@@ -166,6 +166,7 @@ class Inspector:
                     return ir.Eq(left, right)
                 raise UnhandledCaseError("Unsupported instrunction '{} {}'".format(insns[-1].mnemonic, insns[-1].op_str))
 
+    # @return list of constriant IR
     def get_condition_at(self, tactic, relative_addr=None, rebased_addr=None):
         assert(callable(tactic))
         if not relative_addr and not rebased_addr:
@@ -206,7 +207,9 @@ class Tactic:
     def near_path_constraint(inspector, node):
         predecessors_conditions = []
         for predecessor in node.predecessors:
-            predecessors_conditions.append(inspector.get_node_condition(predecessor))
+            predecessor_condition = inspector.get_node_condition(predecessor)
+            if predecessor_condition != ir.Top():
+                predecessors_conditions.append(predecessor_condition)
         node_constraint = inspector.get_node_condition(node)
         if node_constraint == ir.Top():
             return predecessors_conditions        
