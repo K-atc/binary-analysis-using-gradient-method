@@ -192,31 +192,6 @@ class Inspector:
             node = self.get_cfg_node_at(rebased_addr=rebased_addr)
         return tactic(self, node)
 
-    ### Incomplete implementation
-    def read_node_vars(self, start_addr, code, reg, mem, debug=True):
-        res = {}
-        for insn in md.disasm(code, start_addr):
-            print("0x%x:\t%s\t%s" %(insn.address, insn.mnemonic, insn.op_str))
-            for c, op in enumerate(insn.operands):
-                if op.type == capstone.x86.X86_OP_REG:
-                    print("\t\toperands[%u].type: REG = %s" % (c, insn.reg_name(op.reg)))
-                    res[var(insn, op)] = reg(insn.reg_name(op.reg))
-                if op.type == capstone.x86.X86_OP_MEM:
-                    print("\t\toperands[%u].type: MEM" % c)
-                    if debug: print("[*] {} = {:#x}".format(insn.reg_name(op.mem.base), reg(insn.reg_name(op.mem.base))))
-                    mem_read_addr = reg(insn.reg_name(op.mem.base)) + op.mem.disp
-                    if op.mem.index != 0:
-                        mem_read_addr += reg(insn.reg_name(op.mem.index)) * op.mem.scale
-                    res[var(insn, op)] = bytes_to_uint(mem(mem_read_addr, op.size), op.size)
-        return res
-
-    def read_vars_at(self, relative_addr=None, rebased_addr=None):
-        if relative_addr:
-            return self.read_node_vars(self.get_tracee_main_rebased_addr(relative_addr), self.get_cfg_node_code_at(relative_addr=relative_addr), self.process.getreg, self.process.readBytes, self.debug)
-        if rebased_addr:
-            return self.read_node_vars(rebased_addr, self.get_cfg_node_code_at(rebased_addr=rebased_addr), self.process.getreg, self.process.readBytes, self.debug)
-        raise UnhandledCaseError("read_vars_at: provide rebased_addr or relative_addr")
-
     def read_var(self, var):
         if self.debug: print("[*] read_var({})".format(var))
         assert(isinstance(var, ir.Variable))
