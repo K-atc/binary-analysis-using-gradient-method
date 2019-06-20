@@ -8,12 +8,17 @@ def test_if_statement_tree():
 
     cond = inspector.get_condition_at(Tactic.near_path_constraint, relative_addr=cmp1)
     print("condition = {}".format(cond))
+    variables = cond.get_variables()
+    print("variables = {} (type={})".format(variables, type(variables)))
+
+    breakpoint_addrs = set(map(lambda _: _.addr, variables))
 
     inspector.run(["#aab"])
-    inspector.set_breakpoint(relative_addr=cmp1)
-    inspector.cont()
-    res = inspector.read_vars_at(relative_addr=cmp1)
-    print("read_vars_at() = {}".format(res))
+    for addr in breakpoint_addrs:
+        inspector.set_breakpoint(relative_addr=addr)
+        inspector.cont()
+        res = inspector.read_vars(variables.find(addr=addr))
+        print("read_var() = {}".format(res))
 
 def test_elf_cheker():
     print("\n[*] === simple-elf-checker ===")

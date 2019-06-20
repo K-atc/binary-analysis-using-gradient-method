@@ -1,7 +1,7 @@
 python-ptrace
 frida-tools
-lief
+# lief
 r2pipe
 angr
-ipdb
+# ipdb
 angr-utils
