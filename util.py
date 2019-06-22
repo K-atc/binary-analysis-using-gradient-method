@@ -1,11 +1,16 @@
 import ptrace.debugger
+from ptrace.debugger.process_event import *
+import os
 import signal
 import angr
 import capstone
 import subprocess
 import struct
+import time
+
 import ir
 from exceptions import *
+from fs import FileSystem
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 md.detail = True
@@ -55,10 +60,7 @@ class Inspector:
         self.cfg = self.proj.analyses.CFGFast()
 
     def __del__(self):
-        if self.pid > 0:
-            if self.debug: print("[*] Detaching process (pid={})".format(self.pid))
-            self.process.detach()
-            self.debugger.quit()
+        self.stop()
 
     def get_tracee_main_object_base_addr(self):
         mmap = self.process.readMappings()
@@ -77,40 +79,97 @@ class Inspector:
     def set_breakpoint(self, relative_addr=None, rebased_addr=None):
         if relative_addr:
             if self.debug: print("[*] set_breakpoint(relative_addr={:#x})".format(relative_addr))
-            self.breakpoints.append(self.process.createBreakpoint(self.tracee_main_object_base_addr + relative_addr))
-            return True
+            return self.process.createBreakpoint(self.tracee_main_object_base_addr + relative_addr)
         if rebased_addr:
             if self.debug: print("[*] set_breakpoint(rebased_addr={:#x})".format(rebased_addr))
-            self.breakpoints.append(self.process.createBreakpoint(rebased_addr))
-            return True
+            return self.process.createBreakpoint(rebased_addr)
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
-    def run(self, args=[]):
+    # def run_tracee(self, args):
+    #     pid = os.fork()
+    #     if pid: # Parent process
+    #         return pid
+    #     else:
+    #         time.sleep(1) # Wait for ptrace attach
+    #         print("spawn child process...")
+    #         try:
+    #             os.execv(args[0], args)
+    #         except OSError as e:
+    #             print(e)
+    #             exit(1)
+
+    # def run_tracee(self, args, stdin):
+    #     pid = os.fork()
+    #     if pid: # Parent process
+    #         print("[*] pid of Child process is {}".format(pid))
+    #         return pid
+    #     else:
+    #         time.sleep(1) # Wait for ptrace attach
+    #         print("spawn child process '{}' with {} ...".format(args, stdin))
+    #         try:
+    #             subprocess.Popen(args, stdin=stdin)
+    #             while True:
+    #                 pass
+    #         except OSError as e:
+    #             print(e)
+    #             exit(1)
+
+    def run(self, args=[], stdin=b'', files={}):
         assert(isinstance(args, list))
         args = [self.main_file] + args
         self.args = args
+        self.stdin = stdin
         self.breakpoints = []
+        self.fs = FileSystem('./fs-{}/'.format(self.__class__.__name__))
+
+        if files != {}:
+            raise NotImplementedError("files is not supported")
+
+        ### create stdin
+        ### TODO: Hook open & read syscall
+        f_stdin = self.fs.create('stdin', data=stdin)
 
         ### ptrace setup
-        tracee = subprocess.Popen(args)
-        self.pid = tracee.pid
+        # self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.tracee = subprocess.Popen(args, stdin=f_stdin)
+        self.pid = self.tracee.pid
         self.debugger = ptrace.debugger.PtraceDebugger()
-        if self.debug: print("[*] Attach the running process %s" % tracee.pid)
+        if self.debug: print("[*] Attach the running process %s" % self.pid)
         self.process = self.debugger.addProcess(self.pid, False)
         self.tracee_main_object_base_addr = self.get_tracee_main_object_base_addr()
 
     def cont(self):
         if self.pid > 0:
+            if self.debug: print("[*] cont():")
             self.process.cont()
-            self.process.waitSignals(signal.SIGINT, signal.SIGTRAP, signal.SIGSEGV)
-            if self.debug: print("[*] handled signal")
+            try:
+                event = self.process.waitSignals(signal.SIGINT, signal.SIGTRAP)
+                if self.debug: print("Recived event={}".format(event))
+                if self.debug: print("[*] handled signal")
+            except ProcessExit as event:
+                print("Process exited with exitcode {} by signal {}: {}".format(event.exitcode, event.signum, event))
+                self.stop()
+                raise event
+            except ProcessEvent as event:
+                print("Recieved event {}".format(event))
+                self.process.dumpMaps()
+                self.process.dumpRegs()
+                # self.process.dumpStack()
+                raise event
         else:
             print("[!] proess is not running")
             return False
 
-    ### TODO: Terminate process
     def stop(self):
-        pass
+        if hasattr(self, "process") and  self.is_tracee_attached():
+            if self.debug: print("[*] Detaching process (pid={})".format(self.pid))
+            self.process.detach()
+            self.debugger.quit()
+            self.pid = -1
+            # self.tracee.kill() $ TODO
+
+    def is_tracee_attached(self):
+        return self.process.is_attached
 
     def find_symbol(self, symbol):
         return self.proj.loader.find_symbol(symbol)
@@ -127,7 +186,7 @@ class Inspector:
             addr = self.proj.loader.main_object.min_addr + relative_addr
         if rebased_addr:
             addr = rebased_addr
-        assert(isinstance(addr, int))
+        assert isinstance(addr, int) or isinstance(addr, long), "addr = {:#x} ({})".format(addr, type(addr))
         res = self.cfg.get_any_node(addr, anyaddr=True)
         if res is None:
             raise InvalidAddressError("get_cfg_node_at: Basic block starts with provided address {:#x} does not exist".format(addr))
@@ -208,11 +267,14 @@ class Inspector:
             return bytes_to_uint(mem(addr, var.size), var.size)
 
     def read_vars(self, _vars):
-        assert(isinstance(_vars, ir.VariableList))
-        res = {}
-        for var in _vars:
-            res[var.name] = self.read_var(var)
-        return res
+        if self.is_tracee_attached():
+            assert(isinstance(_vars, ir.VariableList))
+            res = {}
+            for var in _vars:
+                res[var.name] = self.read_var(var)
+            return res
+        else:
+            raise ProcessNotFoundError("Tracee is not attached")
 
 class Tactic:
     @staticmethod
@@ -227,3 +289,91 @@ class Tactic:
             return predecessors_conditions
         else:
             return predecessors_conditions + ir.ConstraintList([node_constraint])
+
+class X():
+    def __init__(self, args=[], stdin='', files={}):
+        assert isinstance(args, list)
+        assert isinstance(stdin, str)
+        self.args = args
+        self.stdin = stdin
+        self.files = files
+
+    def __repr__(self):
+        return "{}(args={!r}, stdin={!r}, files={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files)
+
+class Program:
+    def __init__(self, program, xadapter, yadapter, debug=True):
+        assert isinstance(program, str), "'program` must be a path to program"
+        assert callable(xadapter), "`adapter` must be a fucntion"
+        self.program = program
+        self.xadapter = xadapter
+        self.yadapter = yadapter
+        self.inspector = util.Inspector(program)
+        self.debug = debug
+
+    def get_constraints(tactic, relative_addr=None):
+        if relative_addr:
+            return inspector.get_condition_at(tactic, relative_addr=find_addr)
+        raise UnhandledCaseError("provide relative_addr")
+
+    def set_y_constraints(constraints):
+        self.constraints = constraints
+        self.y_variables = constraints.get_variables()
+
+    def call(self, x):
+        assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
+
+        inspector = self.inspector
+        breakpoint_addrs = sorted(set(map(lambda _: _.addr, self.y_variables)))
+
+        inspector.run(args=[self.program] + x.args, stdin=x.stdin, files={})
+        y = {}
+        for addr in breakpoint_addrs:
+            b = inspector.set_breakpoint(relative_addr=addr)
+            if self.debug: print("breakpioint address = {:#x}".format(b.address))
+            try:
+                inspector.cont()
+            except Exception as e:
+                print(e)
+                break
+            b.desinstall(set_ip=True)
+            if not inspector.is_tracee_attached():
+                break
+
+            res = inspector.read_vars(variables.find(addr=addr))
+            if self.debug: print("[*] read_var() = {}".format(res))
+            y.update(res)
+        return y
+
+    def call_with_adapter(self, x):
+        # print("call_with_adpter: x = {}".format(x))
+        return self.yadapter(self.y_variables, self.call(self.xadapter(x)))
+
+def strip_null(s):
+    first_null_pos = s.find('\x00')
+    return s[:first_null_pos]
+
+def vector_to_string(v):
+    try:
+        s = ''.join(map(lambda _: chr(_) if _ > 0 else '\x00', v.list()))
+        return s
+    except Exception, e:
+        import traceback
+        print("\nException: {} {}".format(e.__class__.__name__, v))
+        traceback.print_exc()
+        print("-> v = {}".format(v))
+        exit(1)
+
+class Statistics:
+    lap_time = []
+    start_time = 0
+
+    def __init__(self):
+        pass
+
+    def lap_start(self):
+        self.start_time = time.time()
+    
+    def lap_end(self):
+        end_time = time.time()
+        self.lap_time.append(end_time - self.start_time)

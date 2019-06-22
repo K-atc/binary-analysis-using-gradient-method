@@ -84,8 +84,10 @@ class VariableType:
 
 class Register(VariableType):
     def __init__(self, name):
-        assert(name, str)
-        assert(name is not None)
+        assert name is not None
+        if isinstance(name, unicode):
+            name = str(name)
+        assert isinstance(name, str), "name = {} ({})".format(name, type(name))
         self.kind = self.__class__.__name__        
         self.name = name
     
