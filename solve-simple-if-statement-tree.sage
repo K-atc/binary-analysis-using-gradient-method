@@ -10,7 +10,7 @@ def xadapter(v):
         s = ''.join(map(lambda _: chr(round(_)) if _ > 0 else '\x00', v.list()))
         s = strip_null(s)
         return X(args=[s]) # sage var -> program input
-    except Exception, e:
+    except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
@@ -28,35 +28,16 @@ def yadapter(variables, y):
                 if False: print("[!] Value of v not found. assume 0: v = {}".format(v))
                 res.append(0)
         return res
-    except Exception, e:
+    except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
         print("-> y = {}".format(y))
         exit(1)
 
-def main(N, L, C):
+def main(main_file):
     print()
     print("[*] main")
-
-    ### Solve constraints
-    ### TODO: auto set initial x 
-    model = NeuSolv(N, L, zero_vector(8))
-
-    print("=" * 8)
-    if model:
-        print("[*] found")
-        print("y constraints = {}".format(C))
-        print("model: {}".format(model))
-        print("-> {!r}".format(xadapter(model)))
-    else:
-        print("[*] not found")
-
-    print("-" * 8)
-    print("Lap Time: {}".format(stat.lap_time))
-
-if __name__ == "__main__":
-    main_file = "sample/simple-if-statement-tree"
 
     p = Program(main_file, xadapter, yadapter)
 
@@ -72,4 +53,22 @@ if __name__ == "__main__":
     ### Define loss function
     L = p.L(constraints)
 
-    main(N, L, constraints)
+    ### Solve constraints
+    ### TODO: auto set initial x 
+    model = NeuSolv(N, L, zero_vector(8))
+
+    print("=" * 8)
+    if model:
+        print("[*] found")
+        print("y constraints = {}".format(constraints))
+        print("model: {}".format(model))
+        print("-> {!r}".format(xadapter(model)))
+    else:
+        print("[*] not found")
+
+    print("-" * 8)
+    print("Lap Time: {}".format(stat.lap_time))
+
+if __name__ == "__main__":
+    main_file = "sample/simple-if-statement-tree"
+    main(main_file)

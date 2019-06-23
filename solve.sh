@@ -11,5 +11,7 @@ cd sample
 make
 cd - > /dev/null
 
+rm -f *.sage.py
+
 sage -preparse engine.sage && mv engine.sage.py engine.py
 sage $SOLVER_SAGE_FILE
