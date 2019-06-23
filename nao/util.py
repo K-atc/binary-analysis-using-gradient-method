@@ -1,16 +1,19 @@
-import ptrace.debugger
-from ptrace.debugger.process_event import *
 import os
 import signal
-import angr
-import capstone
 import subprocess
 import struct
 import time
+import functools
 
-import ir
-from exceptions import *
-from fs import FileSystem
+import ptrace.debugger
+from ptrace.debugger.process_event import ProcessEvent, NewProcessEvent, ProcessExit
+import angr
+import capstone
+
+from .ast import constraint as ir
+from .exceptions import *
+from .fs import FileSystem
+from .encoder import Encode
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 md.detail = True
@@ -35,7 +38,11 @@ def var(insn, op):
             str_index_scale,
             op.mem.disp,
             )
-    return "{:x}_{}_{:}".format(addr, var_type, value)
+        value = value.replace('0x', '')
+        value = value.replace('+', 'plus')
+        value = value.replace('-', 'minus')
+        value = value.replace('*', 'multiply')
+    return "var_{:x}_{}_{:}".format(addr, var_type, value)
 
 def bytes_to_uint(p, size):
     if size == 1: 
@@ -49,7 +56,7 @@ def bytes_to_uint(p, size):
     raise UnhandledCaseError
 
 class Inspector:
-    def __init__(self, main_file, debug=True):
+    def __init__(self, main_file, debug=False):
         self.main_file = main_file
         self.debug = debug
         self.pid = -1
@@ -85,37 +92,9 @@ class Inspector:
             return self.process.createBreakpoint(rebased_addr)
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
-    # def run_tracee(self, args):
-    #     pid = os.fork()
-    #     if pid: # Parent process
-    #         return pid
-    #     else:
-    #         time.sleep(1) # Wait for ptrace attach
-    #         print("spawn child process...")
-    #         try:
-    #             os.execv(args[0], args)
-    #         except OSError as e:
-    #             print(e)
-    #             exit(1)
-
-    # def run_tracee(self, args, stdin):
-    #     pid = os.fork()
-    #     if pid: # Parent process
-    #         print("[*] pid of Child process is {}".format(pid))
-    #         return pid
-    #     else:
-    #         time.sleep(1) # Wait for ptrace attach
-    #         print("spawn child process '{}' with {} ...".format(args, stdin))
-    #         try:
-    #             subprocess.Popen(args, stdin=stdin)
-    #             while True:
-    #                 pass
-    #         except OSError as e:
-    #             print(e)
-    #             exit(1)
-
     def run(self, args=[], stdin=b'', files={}):
         assert(isinstance(args, list))
+        if self.debug: print("run(args={!r}, stdin={}, files={})".format(args, stdin, files))
         args = [self.main_file] + args
         self.args = args
         self.stdin = stdin
@@ -130,8 +109,11 @@ class Inspector:
         f_stdin = self.fs.create('stdin', data=stdin)
 
         ### ptrace setup
-        # self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.tracee = subprocess.Popen(args, stdin=f_stdin)
+        if self.debug:
+            stdout = None
+        else:
+            stdout = subprocess.PIPE
+        self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=stdout)
         self.pid = self.tracee.pid
         self.debugger = ptrace.debugger.PtraceDebugger()
         if self.debug: print("[*] Attach the running process %s" % self.pid)
@@ -147,7 +129,7 @@ class Inspector:
                 if self.debug: print("Recived event={}".format(event))
                 if self.debug: print("[*] handled signal")
             except ProcessExit as event:
-                print("Process exited with exitcode {} by signal {}: {}".format(event.exitcode, event.signum, event))
+                if self.debug: print("Process exited with exitcode {} by signal {}: {}".format(event.exitcode, event.signum, event))
                 self.stop()
                 raise event
             except ProcessEvent as event:
@@ -166,7 +148,11 @@ class Inspector:
             self.process.detach()
             self.debugger.quit()
             self.pid = -1
-            # self.tracee.kill() $ TODO
+        if not self.debug:
+            try:
+                self.tracee.kill()
+            except:
+                pass
 
     def is_tracee_attached(self):
         return self.process.is_attached
@@ -186,7 +172,10 @@ class Inspector:
             addr = self.proj.loader.main_object.min_addr + relative_addr
         if rebased_addr:
             addr = rebased_addr
-        assert isinstance(addr, int) or isinstance(addr, long), "addr = {:#x} ({})".format(addr, type(addr))
+        try:
+            addr = int(addr)
+        except:
+            UnexpectedException("addr is not kind of integer: addr = {:#x} ({})".format(addr, type(addr)))
         res = self.cfg.get_any_node(addr, anyaddr=True)
         if res is None:
             raise InvalidAddressError("get_cfg_node_at: Basic block starts with provided address {:#x} does not exist".format(addr))
@@ -209,7 +198,8 @@ class Inspector:
             start_addr = self.get_relative_addr(rebased_addr=node.addr)
             code = self.get_cfg_node_code_at(rebased_addr=node.addr)
             insns = list(md.disasm(code, start_addr))
-            ### Compare
+
+            ### Compare instruction
             v = []
             for insn in [insns[-2]]:
                 for c, op in enumerate(insn.operands):                
@@ -232,12 +222,14 @@ class Inspector:
                 if insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_TEST]:
                     left = v[0]
                     right = v[1]
+
             ### Conditional Branch
             for insn in [insns[-1]]:
+                # NOTE: Returns constraint of jump *not* taken
                 if insn.id == capstone.x86.X86_INS_JNE:
-                    return ir.Not(ir.Eq(left, right))
-                if insn.id == capstone.x86.X86_INS_JE:
                     return ir.Eq(left, right)
+                if insn.id == capstone.x86.X86_INS_JE:
+                    return ir.Ne(left, right)
                 raise UnhandledCaseError("Unsupported instrunction '{} {}'".format(insns[-1].mnemonic, insns[-1].op_str))
 
     # @return list of constriant IR
@@ -266,6 +258,7 @@ class Inspector:
                 addr = reg(op.base.name) + op.disp
             return bytes_to_uint(mem(addr, var.size), var.size)
 
+    # @return variables value in current context of tracee
     def read_vars(self, _vars):
         if self.is_tracee_attached():
             assert(isinstance(_vars, ir.VariableList))
@@ -302,31 +295,37 @@ class X():
         return "{}(args={!r}, stdin={!r}, files={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files)
 
 class Program:
-    def __init__(self, program, xadapter, yadapter, debug=True):
+    # @param xadapter encodes vector to vales of x variables (program inputs)
+    # @param yadapter encodes values of y variables to vector
+    def __init__(self, program, xadapter, yadapter, debug=False):
         assert isinstance(program, str), "'program` must be a path to program"
         assert callable(xadapter), "`adapter` must be a fucntion"
         self.program = program
         self.xadapter = xadapter
         self.yadapter = yadapter
-        self.inspector = util.Inspector(program)
+        # self.inspector = Inspector(program, debug=True)
+        self.inspector = Inspector(program, debug=False)
         self.debug = debug
 
-    def get_constraints(tactic, relative_addr=None):
+    def get_constraints(self, tactic, relative_addr=None):
         if relative_addr:
-            return inspector.get_condition_at(tactic, relative_addr=find_addr)
+            return self.inspector.get_condition_at(tactic, relative_addr=relative_addr)
         raise UnhandledCaseError("provide relative_addr")
 
-    def set_y_constraints(constraints):
-        self.constraints = constraints
-        self.y_variables = constraints.get_variables()
+    def N(self, constraint):
+        assert isinstance(constraint, ir.ConstraintIR)
+        return functools.partial(self.call_with_adapter, constraint.get_variables())
+    
+    def L(self, constraint):
+        return Encode(constraint)
 
-    def call(self, x):
+    def call(self, y_variables, x):
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
         inspector = self.inspector
-        breakpoint_addrs = sorted(set(map(lambda _: _.addr, self.y_variables)))
+        breakpoint_addrs = sorted(set(map(lambda _: _.addr, y_variables)))
 
-        inspector.run(args=[self.program] + x.args, stdin=x.stdin, files={})
+        inspector.run(args=x.args, stdin=x.stdin, files={})
         y = {}
         for addr in breakpoint_addrs:
             b = inspector.set_breakpoint(relative_addr=addr)
@@ -340,14 +339,17 @@ class Program:
             if not inspector.is_tracee_attached():
                 break
 
-            res = inspector.read_vars(variables.find(addr=addr))
+            res = inspector.read_vars(y_variables.find(addr=addr))
             if self.debug: print("[*] read_var() = {}".format(res))
             y.update(res)
+
+        inspector.stop()
+        if self.debug: print("y = {}".format(y))
         return y
 
-    def call_with_adapter(self, x):
+    def call_with_adapter(self, y_variables, x):
         # print("call_with_adpter: x = {}".format(x))
-        return self.yadapter(self.y_variables, self.call(self.xadapter(x)))
+        return self.yadapter(y_variables, self.call(y_variables, self.xadapter(x)))
 
 def strip_null(s):
     first_null_pos = s.find('\x00')
@@ -357,23 +359,10 @@ def vector_to_string(v):
     try:
         s = ''.join(map(lambda _: chr(_) if _ > 0 else '\x00', v.list()))
         return s
-    except Exception, e:
+    except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, v))
         traceback.print_exc()
         print("-> v = {}".format(v))
         exit(1)
 
-class Statistics:
-    lap_time = []
-    start_time = 0
-
-    def __init__(self):
-        pass
-
-    def lap_start(self):
-        self.start_time = time.time()
-    
-    def lap_end(self):
-        end_time = time.time()
-        self.lap_time.append(end_time - self.start_time)

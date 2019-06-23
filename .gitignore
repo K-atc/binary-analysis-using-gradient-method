@@ -10,5 +10,8 @@ ubuntu-bionic-18.04-cloudimg-console.log
 *.so
 *.xz
 *.png
+*.s
+pin-*
 
 /engine.py
+/fs-*/

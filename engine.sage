@@ -1,25 +1,22 @@
 #!/usr/bin/sage
 #coding: utf8
-import subprocess
-import json
 import time
 
-import util
-import ir
+class Statistics:
+    lap_time = []
+    start_time = 0
 
-stat = util.Statistics()
+    def __init__(self):
+        pass
 
-alpha = 1e-6
-beta = -1e-6
+    def lap_start(self):
+        self.start_time = time.time()
+    
+    def lap_end(self):
+        end_time = time.time()
+        self.lap_time.append(end_time - self.start_time)
 
-L_a_lt_b(a, b) = max(a - b + alpha, 0) # S ::= a < b
-L_a_gt_b(a, b) = max(b - a + alpha, 0) # S ::= a > b
-L_a_le_b(a, b) = max_symbolic(a - b, 0)
-L_a_ge_b(a, b) = max_symbolic(b - a, 0)
-L_a_eq_b(a, b) = abs(a - b + alpha)
-L_a_ne_b(a, b) = max_symbolic(-1, -1 * abs(a - b + beta))
-L_land(L_S1, L_S2) = L_S1 + L_S2
-L_lor(L_S1, L_S2) = min_symbolic(L_S1, L_S2)
+stat = Statistics()
 
 def D_x_f(f, x):
     n = len(x)
@@ -38,6 +35,9 @@ def D_x_f(f, x):
     return matrix(res).transpose()
 
 def NeuSolv(N, L, x0):
+    assert callable(N)
+    assert callable(L)
+
     epsilon = 0.5
     gamma = 0.9
     
@@ -65,6 +65,9 @@ def NeuSolv(N, L, x0):
         grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
         x[k + 1] = x[k] + gamma * (x[k] - x[k - 1]) - epsilon * grad_L_N_x # Momentum
         # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
+
+        if k > 1 and x[k + 1] == x[k]:
+            return None
 
         stat.lap_end()
 

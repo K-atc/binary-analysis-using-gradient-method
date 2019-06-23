@@ -79,5 +79,7 @@ Vagrant.configure("2") do |config|
     chown $USER.$USER /opt/SageMath
     tar xf sage-8.7-Ubuntu_18.04-x86_64.tar.bz2 -C /opt/
     sudo ln -s /opt/SageMath/sage /usr/local/bin/sage
+    echo "export SAGE_ROOT=/opt/SageMath/" > \~/.bashrc
+    echo "alias sage=/opt/SageMath/sage" > \~/.bashrc
   SHELL
 end

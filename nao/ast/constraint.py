@@ -1,6 +1,9 @@
-from exceptions import *
+import sys
 
-class ConstraintIR:
+from . import ast
+from ..exceptions import *
+
+class ConstraintIR(ast.Ast):
     pass
 
 class VariableList(list):
@@ -14,7 +17,7 @@ class VariableList(list):
             return VariableList(filter(lambda _: _.addr == addr, self))
         raise UnhandledCaseError("VariableList.find(): provide `name` or `addr`")  
 
-class ConstraintList(list):
+class ConstraintList(list, ConstraintIR):
     def __add__(self, other):
         return ConstraintList(super(ConstraintList, self).__add__(other))
 
@@ -24,57 +27,18 @@ class ConstraintList(list):
             res += const.get_variables()
         return VariableList(sorted(res))
 
-class Term(ConstraintIR):
-    def __init__(self):
-        self.kind = self.__class__.__name__
-    
-    def __eq__(self, other):
-        if isinstance(other, Term):
-            return self.kind == self.kind
-        else:
-            return False
-
-    def __repr__(self):
-        return "{}".format(self.kind)
-
+class Term(ast.Term, ConstraintIR):
     def get_variables(self):
         return VariableList()
 
-class UniOp(ConstraintIR):
-    def __init__(self, value):
-        self.kind = self.__class__.__name__
-        self.value = value
-
-    def __eq__(self, other):
-        if isinstance(other, UniOp):
-            return (self.kind == other.kind) and (self.value == other.value)
-        else:
-            return False
-
-    def __repr__(self):
-        return "{}({})".format(self.kind, self.value)
-
+class UniOp(ast.UniOp, ConstraintIR):
     def get_variables(self):
         if isinstance(self.value, ConstraintIR):
             return self.value.get_variables()
         else:
             return VariableList()
 
-class BinOp(ConstraintIR):
-    def __init__(self, left, right):
-        self.kind = self.__class__.__name__
-        self.left = left
-        self.right = right
-
-    def __eq__(self, other):
-        if isinstance(other, BinOp):
-            return (self.kind == other.kind) and (self.left == other.left) and (self.right == other.right)
-        else:
-            return False
-
-    def __repr__(self):
-        return "{}({}, {})".format(self.kind, self.left, self.right)
-
+class BinOp(ast.BinOp, ConstraintIR):
     def get_variables(self):
         return self.left.get_variables() + self.right.get_variables()
 
@@ -85,8 +49,9 @@ class VariableType:
 class Register(VariableType):
     def __init__(self, name):
         assert name is not None
-        if isinstance(name, unicode):
-            name = str(name)
+        if sys.version_info.major == 2:
+            if isinstance(name, unicode):
+                name = str(name)
         assert isinstance(name, str), "name = {} ({})".format(name, type(name))
         self.kind = self.__class__.__name__        
         self.name = name
@@ -140,7 +105,12 @@ class Variable(ConstraintIR):
         return VariableList([self])
 
 class Top(Term):
-    pass
+    def __init__(self):
+        self.kind = self.__class__.__name__
+
+class Bottom(Term):
+    def __init__(self):
+        self.kind = self.__class__.__name__
 
 class Value(UniOp):
     def __repr__(self):
@@ -158,6 +128,9 @@ class Or(BinOp):
 class Eq(BinOp):
     pass
 
+class Ne(BinOp):
+    pass
+
 class Lt(BinOp):
     pass
 
@@ -171,16 +144,6 @@ class Ge(BinOp):
     pass
 
 if __name__ == "__main__":
-    print(Eq(Value(1), Value(2)))
-    print(Eq(Value(1), Top()))
-
-    print("[*] Compare Terms")
-    print("Top() == Top() is {}".format(Top() == Top()))
-    print("Top() is Top() is {}".format(Top() is Top()))
-    print("isinstance(Top(), Top) is {}".format(isinstance(Top(), Top)))
-    assert((Top() == Top()) == True)
-    assert((Top() == Eq(Top(), Top())) == False)
-
     print("[*] get_variables()")
     r = Register('r')
     var_a_4_1 = Variable('a', 4, 1, r)

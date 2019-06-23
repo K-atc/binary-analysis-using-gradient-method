@@ -1,9 +1,9 @@
 #!/usr/bin/python
-from util import Inspector, Tactic
+from nao.util import Inspector, Tactic
 
 def test_if_statement_tree():
     print("\n[*] === simple-if-statement-tree ===")
-    inspector = Inspector("sample/simple-if-statement-tree")
+    inspector = Inspector("sample/simple-if-statement-tree", debug=True)
     cmp1 = 0x7d6
 
     cond = inspector.get_condition_at(Tactic.near_path_constraint, relative_addr=cmp1)
@@ -25,11 +25,11 @@ def test_if_statement_tree():
 
 def test_elf_cheker(stdin):
     print("\n[*] === simple-elf-checker (stdin={}) ===".format(stdin))
-    inspector = Inspector("sample/simple-elf-checker")
+    inspector = Inspector("sample/simple-elf-checker", debug=True)
     find_addr = 0x836
 
     cond = inspector.get_condition_at(Tactic.near_path_constraint, relative_addr=find_addr)
-    print("condition = {}".format(cond))
+    print("constraints = {}".format(cond))
     variables = cond.get_variables()
     print("variables = {} (type={})".format(variables, type(variables)))
 
