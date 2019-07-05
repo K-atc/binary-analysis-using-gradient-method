@@ -1,4 +1,4 @@
-TARGET=simple-if-statement-tree simple-elf-checker traceme
+TARGET=simple-if-statement-tree simple-elf-checker traceme function
 
 all: $(TARGET)
 

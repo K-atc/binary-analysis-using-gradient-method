@@ -36,13 +36,10 @@ def yadapter(variables, y):
         exit(1)
 
 def main(main_file):
-    print()
-    print("[*] main")
-
+    ### Load analysis target
     p = Program(main_file, xadapter, yadapter)
 
     ### Generate constraints on y
-    # find_addr = 0x7e1
     find_addr = 0x7da
     constraints = p.get_constraints(Tactic.near_path_constraint, relative_addr=find_addr)
     print("y constraints = {}".format(constraints))
@@ -55,7 +52,7 @@ def main(main_file):
 
     ### Solve constraints
     ### TODO: auto set initial x 
-    model = NeuSolv(N, L, zero_vector(8))
+    model = NeuSolv(N, L, zero_vector(8), xadapter)
 
     print("=" * 8)
     if model:

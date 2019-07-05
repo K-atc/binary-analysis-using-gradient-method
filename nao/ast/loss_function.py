@@ -23,3 +23,9 @@ class Land(ast.BinOp):
 
 class Lor(ast.BinOp):
     pass
+
+class Band(ast.BinOp):
+    pass
+
+class Bor(ast.BinOp):
+    pass

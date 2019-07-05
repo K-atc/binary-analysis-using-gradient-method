@@ -6,6 +6,14 @@ from .exceptions import *
 from .loss_function import L_op
 
 def e(c):
+    if isinstance(c, C.Land):
+        return L.Land(e(c.left), e(c.right))
+    if isinstance(c, C.Lor):
+        return L.Lor(e(c.left), e(c.right))
+    if isinstance(c, C.Band):
+        return L.Band(e(c.left), e(c.right))
+    if isinstance(c, C.Bor):
+        return L.Bor(e(c.left), e(c.right))
     if isinstance(c, C.Lt):
         return L.Lt(e(c.left), e(c.right))
     if isinstance(c, C.Gt):
@@ -46,9 +54,9 @@ def Encode(constraints):
     for v in variables_names:
         eval_locals.update({v: var(v)})
 
-    print("sage_eval({}, locals={})".format(eval_statement, eval_locals))
+    # print("[*] sage_eval({}, locals={})".format(eval_statement, eval_locals))
     L = sage_eval(eval_statement, locals=eval_locals)
-    print("L = {}".format(L))
+    # print("[*] L = {}".format(L))
     return L
 
 if __name__ == "__main__":

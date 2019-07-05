@@ -16,10 +16,20 @@ def test_if_statement_tree():
     inspector.run(args=["#aab"])
     y = {}
     for addr in breakpoint_addrs:
-        inspector.set_breakpoint(relative_addr=addr)
-        inspector.cont()
+        b = inspector.set_breakpoint(relative_addr=addr)
+        print("breakpioint address = {:#x}".format(b.address))
+    while True:
+        try:
+            inspector.cont()
+        except Exception as e:
+            print(e)
+            break
+        if not inspector.is_tracee_attached():
+            break
+        pc = inspector.process.getInstrPointer()
+        print("pc = {:#x}".format(pc))
+        addr = inspector.get_relative_addr(tracee_rebased_addr=pc-1)
         res = inspector.read_vars(variables.find(addr=addr))
-        print("read_var() = {}".format(res))
         y.update(res)
     return y
 
@@ -40,26 +50,30 @@ def test_elf_cheker(stdin):
     for addr in breakpoint_addrs:
         b = inspector.set_breakpoint(relative_addr=addr)
         print("breakpioint address = {:#x}".format(b.address))
+    while True:
         try:
             inspector.cont()
         except Exception as e:
             print(e)
             break
-        b.desinstall(set_ip=True)
         if not inspector.is_tracee_attached():
             break
-
+        pc = inspector.process.getInstrPointer()
+        print("pc = {:#x}".format(pc))
+        addr = inspector.get_relative_addr(tracee_rebased_addr=pc-1)
         res = inspector.read_vars(variables.find(addr=addr))
-        print("read_var() = {}".format(res))
         y.update(res)
     return y
 
 if __name__ == "__main__":
     res = test_if_statement_tree()
     print(res)
+    assert len(res) > 0
 
     res = test_elf_cheker(stdin=b"\x7fELF") # satisfies all constraints
     print(res)
+    assert len(res) > 0
 
     res = test_elf_cheker(stdin=b"abcd")
     print(res)
+    assert len(res) > 0

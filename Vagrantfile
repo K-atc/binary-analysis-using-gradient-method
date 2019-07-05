@@ -61,6 +61,7 @@ Vagrant.configure("2") do |config|
   # information on available options.
 
   config.vm.provision "file", source: "requirements.txt", destination: "~/requirements.txt"
+  config.vm.provision "file", source: "sage-8.7-Ubuntu_18.04-x86_64.tar.bz2", destination: "~/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2"
 
   # Enable provisioning with a shell script. Additional provisioners such as
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
@@ -68,18 +69,21 @@ Vagrant.configure("2") do |config|
   config.vm.provision "shell", inline: <<-SHELL
     apt update
     # apt install -y sagemath
-    apt install -y python3-pip gdb
+    apt install -y python-pip python3-pip gdb silversearcher-ag
     pip install -r \~vagrant/requirements.txt
     pip3 install -r \~vagrant/requirements.txt
     echo 0 > /proc/sys/kernel/yama/ptrace_scope
 
     # Install sagemath
-    wget http://ftp.riken.jp/sagemath/linux/64bit/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
-    mkdir /opt/SageMath
-    chown $USER.$USER /opt/SageMath
-    tar xf sage-8.7-Ubuntu_18.04-x86_64.tar.bz2 -C /opt/
-    sudo ln -s /opt/SageMath/sage /usr/local/bin/sage
-    echo "export SAGE_ROOT=/opt/SageMath/" > \~/.bashrc
-    echo "alias sage=/opt/SageMath/sage" > \~/.bashrc
+    echo "[*] Install sagemath"
+    # wget -q http://ftp.riken.jp/sagemath/linux/64bit/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
+    mkdir -p /opt/SageMath
+    chown -R vagrant.vagrant /opt/SageMath
+    tar xf \~vagrant/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2 -C /opt/
+    sudo ln -f -s /opt/SageMath/sage /usr/local/bin/sage
+    echo "export SAGE_ROOT=/opt/SageMath/" >> \~/.bashrc
+    echo "alias sage=/opt/SageMath/sage" >> \~/.bashrc
+    sage -c 'exit'
+    sage -sh -c 'pip install -r ~vagrant/requirements.txt'
   SHELL
 end

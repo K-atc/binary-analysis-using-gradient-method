@@ -1,4 +1,6 @@
+#coding:utf-8
 import sys
+import numbers
 
 from . import ast
 from ..exceptions import *
@@ -63,8 +65,8 @@ class Memory(VariableType):
     def __init__(self, base, index, scale, disp):
         assert(isinstance(base, Register))
         assert(isinstance(index, Register) or index is None)
-        assert(isinstance(scale, int))
-        assert(isinstance(disp, int))
+        assert(isinstance(scale, numbers.Integral))
+        assert(isinstance(disp, numbers.Integral))
         self.kind = self.__class__.__name__
         self.base = base
         self.index = index
@@ -75,6 +77,7 @@ class Memory(VariableType):
         return "{}(base={}, index={}, scale={}, disp={})".format(self.kind, self.base, self.index, self.scale, self.disp)
 
 class Variable(ConstraintIR):
+    ### TODO: object name where this variable locates
     def __init__(self, name, size, addr, vtype):
         assert(isinstance(vtype, VariableType))
         self.kind = self.__class__.__name__
@@ -119,10 +122,18 @@ class Value(UniOp):
 class Not(UniOp):
     pass
 
-class And(BinOp):
+### Logical AND (∧)
+class Land(BinOp):
     pass
 
-class Or(BinOp):
+### Logical OR (∨)
+class Lor(BinOp):
+    pass
+
+class Band(BinOp):
+    pass
+
+class Bor(BinOp):
     pass
 
 class Eq(BinOp):

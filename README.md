@@ -16,6 +16,12 @@ wget https://github.com/frida/frida/releases/download/12.6.6/frida-gadget-12.6.6
 unxz frida-gadget-12.6.6-linux-x86_64.so.xz 
 ```
 
+sample.tar の作り方
+
+```shell
+tar cf sample.tar sample/
+```
+
 sage shell sで pip install を実行。
 
 ```
