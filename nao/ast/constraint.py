@@ -1,4 +1,5 @@
 #coding:utf-8
+import os
 import sys
 import numbers
 
@@ -12,11 +13,14 @@ class VariableList(list):
     def __add__(self, other):
         return VariableList(super(VariableList, self).__add__(other))
 
-    def find(self, name=None, addr=None):
+    def find(self, name=None, objfile=None, addr=None):
         if name:
             return VariableList(filter(lambda _: _.name == name, self))
         if addr:
-            return VariableList(filter(lambda _: _.addr == addr, self))
+            if objfile:
+                return VariableList(filter(lambda _: _.addr == addr and objfile in _.objfile, self))
+            else:
+                return VariableList(filter(lambda _: _.addr == addr, self))
         raise UnhandledCaseError("VariableList.find(): provide `name` or `addr`")  
 
 class ConstraintList(list, ConstraintIR):
@@ -78,13 +82,15 @@ class Memory(VariableType):
 
 class Variable(ConstraintIR):
     ### TODO: object name where this variable locates
-    def __init__(self, name, size, addr, vtype):
-        assert(isinstance(vtype, VariableType))
+    def __init__(self, name, size, addr, vtype, objfile=None):
+        assert isinstance(vtype, VariableType)
+        assert objfile is None or isinstance(objfile, str)
         self.kind = self.__class__.__name__
         self.name = name
         self.size = size
         self.addr = addr
         self.vtype = vtype
+        self.objfile = objfile
 
     def __eq__(self, other):
         if isinstance(other, Variable):
@@ -102,7 +108,10 @@ class Variable(ConstraintIR):
         return False
 
     def __repr__(self):
-        return "{}({}, {}, {:#x}, {})".format(self.kind, self.name, self.size, self.addr, self.vtype)
+        if self.objfile:
+            return "{}({}, {}, {:#x}, {}, in {})".format(self.kind, self.name, self.size, self.addr, self.vtype, os.path.basename(self.objfile))
+        else:
+            return "{}({}, {}, {:#x}, {})".format(self.kind, self.name, self.size, self.addr, self.vtype)
 
     def get_variables(self):
         return VariableList([self])

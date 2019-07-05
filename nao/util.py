@@ -72,7 +72,7 @@ class Inspector:
         self.tracee_main_object_base_addr = 0
 
         ### angr setup
-        self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1.0.0'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']})
+        self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']})
         print(self.proj.loader.all_objects)
         # print(dir(self.proj.loader.all_objects[0]))
         # exit(1)
@@ -86,38 +86,40 @@ class Inspector:
         return self.mmap
 
     def get_tracee_object_base_addr(self, object_name):
+        # if self.debug: print("[*] get_tracee_object_base_addr(object_name='{}')".format(object_name))
         if hasattr(self, "mmap") and self.mmap:
             mmap = self.mmap
         else:
             mmap = self.get_tracee_mmap()
+        object_name = os.path.basename(object_name)
         for x in mmap:
-            if x.pathname and object_name in str(x.pathname):
-                if self.debug: print("{:#x} {}".format(x.start, x.pathname))
+            if x.pathname and (object_name in os.path.basename(str(x.pathname))):
+                # if self.debug: print("[*] get_tracee_object_base_addr: {:#x} {}".format(x.start, x.pathname))
                 return x.start
-        raise UnhandledCaseError("get_main_base_addr: Cannot find {} base address".format(object_name))
+        raise UnhandledCaseError("Cannot find base address of '{}'".format(object_name))
 
     def get_tracee_main_object_base_addr(self):
         return self.get_tracee_object_base_addr(self.main_file)
 
     def get_tracee_main_rebased_addr(self, relative_addr):
-        print("self.tracee_main_object_base_addr = {:#x}".format(self.tracee_main_object_base_addr))
+        if self.debug: print("self.tracee_main_object_base_addr = {:#x}".format(self.tracee_main_object_base_addr))
         if not self.tracee_main_object_base_addr:
             raise Exception("called get_tracee_main_rebased_addr() before running process")
         return self.tracee_main_object_base_addr + relative_addr
 
-    ### TODO: support ast.constriant.Variable
+    ### REFACTER: object_name -> object_file
     def set_breakpoint(self, variable=None, object_name=None, relative_addr=None, rebased_addr=None):
+        if rebased_addr and self.debug: print("[*] set_breakpoint(rebased_addr={:#x})".format(rebased_addr))
         if variable:
             assert variable, ir.Variable
-            raise NotImplementedError("set_breakpint: TODO: support ast.constriant.Variable")
+            rebased_addr = self.get_tracee_object_base_addr(variable.objfile) + variable.addr
         if relative_addr:
-            if self.debug: print("[*] set_breakpoint(object_name={}, relative_addr={:#x})".format(object_name, relative_addr))
+            if self.debug: print("[*] set_breakpoint(object_name='{}', relative_addr={:#x})".format(object_name, relative_addr))
             if object_name:
-                return self.process.createBreakpoint(self.get_tracee_object_base_addr(object_name) + relative_addr)
+                rebased_addr = self.get_tracee_object_base_addr(object_name) + relative_addr
             else:
-                return self.process.createBreakpoint(self.tracee_main_object_base_addr + relative_addr)
+                rebased_addr = self.tracee_main_object_base_addr + relative_addr
         if rebased_addr:
-            if self.debug: print("[*] set_breakpoint(rebased_addr={:#x})".format(rebased_addr))
             return self.process.createBreakpoint(rebased_addr)
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
@@ -222,7 +224,17 @@ class Inspector:
                 return tracee_rebased_addr - self.get_tracee_object_base_addr(object_name)
             else:
                 return tracee_rebased_addr - self.tracee_main_object_base_addr
-        raise UnhandledCaseError("get_relative_addr")
+        raise UnhandledCaseError("provide rebased_addr or tracee_rebased_addr")
+
+    def find_object_containing(self, rebased_addr=None, tracee_rebased_addr=None):
+        if rebased_addr:
+            return self.proj.loader.find_object_containing(rebased_addr).binary
+        if tracee_rebased_addr:
+            for x in self.mmap:
+                if tracee_rebased_addr in x:
+                    return x.pathname
+            raise UnexpectedException("Memory map for address {:#x} not found in tracee".format(tracee_rebased_addr))
+        raise UnhandledCaseError("provide rebased_addr or tracee_rebased_addr")
 
     def get_cfg_node_at(self, object_name=None, relative_addr=None, rebased_addr=None):
         if not relative_addr and not rebased_addr:
@@ -257,8 +269,8 @@ class Inspector:
         if len(node.successors) < 2:
             return ir.Top()
         else:
-            ### TODO: Object name
             start_addr = node.addr - self.proj.loader.find_object_containing(node.addr).min_addr
+            object_file = self.find_object_containing(rebased_addr=node.addr)
             code = self.get_cfg_node_code_at(rebased_addr=node.addr)
             insns = list(md.disasm(code, start_addr))
 
@@ -266,9 +278,9 @@ class Inspector:
             v = []
             compare_inst = insns[-2]
             for insn in [insns[-2]]:
-                for c, op in enumerate(insn.operands):                
+                for c, op in enumerate(insn.operands):
                     if op.type == capstone.x86.X86_OP_REG:
-                        v.append(ir.Variable(var(insn, op), op.size, insn.address, ir.Register(insn.reg_name(op.reg))))
+                        v.append(ir.Variable(var(insn, op), op.size, insn.address, ir.Register(insn.reg_name(op.reg)), object_file))
                     if op.type == capstone.x86.X86_OP_IMM:
                         v.append(ir.Value(op.imm))
                     if op.type == capstone.x86.X86_OP_MEM:
@@ -282,7 +294,7 @@ class Inspector:
                             op.mem.scale,
                             op.mem.disp
                             )
-                        v.append(ir.Variable(var(insn, op), op.size, insn.address, vmem))
+                        v.append(ir.Variable(var(insn, op), op.size, insn.address, vmem, object_file))
                 if insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_TEST]:
                     left = v[0]
                     right = v[1]
@@ -409,15 +421,15 @@ class Program:
 
     def call(self, y_variables, x):
         if self.debug: print("[*] call(y=..., x={})".format(x))
+        assert isinstance(y_variables, ir.VariableList)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
         inspector = self.inspector
-        breakpoint_addrs = sorted(set(map(lambda _: _.addr, y_variables)))
 
         inspector.run(args=x.args, stdin=x.stdin, files={})
         y = {}
-        for addr in breakpoint_addrs:
-            b = inspector.set_breakpoint(relative_addr=addr)
+        for v in y_variables:
+            b = inspector.set_breakpoint(variable=v)
         while True:
             try:
                 inspector.cont()
@@ -426,22 +438,24 @@ class Program:
                 break
             if not inspector.is_tracee_attached():
                 break
-            pc = self.inspector.process.getInstrPointer()
-            # if self.debug: print("[*] stopped by breakpoint. pc = {:#x}".format(pc))
-            addr = self.inspector.get_relative_addr(tracee_rebased_addr=pc - 1)
-            res = inspector.read_vars(y_variables.find(addr=addr))
+            pc = inspector.process.getInstrPointer()
+            breakpoint_addr = pc - 1
+            objfile = inspector.find_object_containing(tracee_rebased_addr=breakpoint_addr)
+            addr = inspector.get_relative_addr(object_name=objfile, tracee_rebased_addr=breakpoint_addr)
+            objfile = inspector.find_object_containing(tracee_rebased_addr=breakpoint_addr)
+            res = inspector.read_vars(y_variables.find(objfile=objfile, addr=addr))
             # if self.debug: print("[*] read_var() = {}".format(res))
             y.update(res)
-            b = self.inspector.process.findBreakpoint(pc - 1)
+            b = self.inspector.process.findBreakpoint(breakpoint_addr)
             if b:
                 print("!")
                 if self.debug: print("[*] remove breakpoint at {:#x}".format(b.address))
                 b.desinstall(set_ip=True)
             ### Reinstall breakpoint
-            self.inspector.process.singleStep()
+            inspector.process.singleStep()
             # self.inspector.cont()
-            self.inspector.process.waitSignals(signal.SIGTRAP)
-            inspector.set_breakpoint(relative_addr=addr)
+            inspector.process.waitSignals(signal.SIGTRAP)
+            inspector.set_breakpoint(rebased_addr=breakpoint_addr)
 
 
         inspector.stop()
