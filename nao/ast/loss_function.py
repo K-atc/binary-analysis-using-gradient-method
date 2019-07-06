@@ -1,5 +1,9 @@
 from . import ast
 
+### True
+class Top(ast.Term):
+    pass
+
 class Lt(ast.BinOp):
     pass
 

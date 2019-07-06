@@ -13,7 +13,7 @@ def test_file():
     y_variables = cond.get_variables()
     print("y_variables = {} (type={})".format(y_variables, type(y_variables)))
 
-    inspector.run(args=["/vagrant/sample.tar"])
+    inspector.run(args=["/vagrant/sample.tar"], env={'LD_LIBRARY_PATH': '/vagrant/sample/'})
 
     return inspector.collect(y_variables)
 

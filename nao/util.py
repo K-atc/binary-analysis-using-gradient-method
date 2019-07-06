@@ -23,7 +23,7 @@ CPU_SUB_REGISTERS['r13d'] = ('r13', 0, 0xffffffff)
 from .ast import constraint as ir
 from .exceptions import *
 from .fs import FileSystem
-# from .encoder import Encode
+from .encoder import Encode
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 md.detail = True
@@ -75,8 +75,8 @@ class Inspector:
         ### angr setup
         ### NOTE: `ld_path` is usable in Python3
         ### About `ld_path`: https://github.com/angr/cle/blob/master/README.md
-        self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']})
-        # self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1']})
+        # self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']}) # FIXME
+        self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1']})
         print("proj.loader.all_objects = {}".format(self.proj.loader.all_objects))
         self.cfg = self.proj.analyses.CFGFast() # CFGFast() misses predecessors not jointed to the block
         # self.cfg = self.proj.analyses.CFGEmulated() # Not works for external library (?)
@@ -90,10 +90,12 @@ class Inspector:
 
     def get_tracee_object_base_addr(self, object_name):
         # if self.debug: print("[*] get_tracee_object_base_addr(object_name='{}')".format(object_name))
-        if hasattr(self, "mmap") and self.mmap:
+        if hasattr(self, "mmap") and not self.mmap:
             mmap = self.mmap
         else:
             mmap = self.get_tracee_mmap()
+        assert object_name is not None
+        assert mmap is not None
         object_name = os.path.basename(object_name)
         for x in mmap:
             if x.pathname and (object_name in os.path.basename(str(x.pathname))):
@@ -115,7 +117,10 @@ class Inspector:
         if rebased_addr and self.debug: print("[*] set_breakpoint(rebased_addr={:#x})".format(rebased_addr))
         if variable:
             assert variable, ir.Variable
-            rebased_addr = self.get_tracee_object_base_addr(variable.objfile) + variable.addr
+            if variable.objfile:
+                rebased_addr = self.get_tracee_object_base_addr(variable.objfile) + variable.addr
+            else:
+                rebased_addr = self.get_tracee_main_object_base_addr() + variable.addr
         if relative_addr:
             if self.debug: print("[*] set_breakpoint(object_name='{}', relative_addr={:#x})".format(object_name, relative_addr))
             if not relative_addr < 0x400000:
@@ -137,7 +142,7 @@ class Inspector:
                 raise e
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
-    def run(self, args=[], stdin=b'', files={}):
+    def run(self, args=[], stdin=b'', files={}, env={'LD_LIBRARY_PATH':''}):
         assert(isinstance(args, list))
         assert(isinstance(stdin, bytes))
         if self.debug: print("run(args={!r}, stdin={}, files={})".format(args, stdin, files))
@@ -146,6 +151,7 @@ class Inspector:
         self.stdin = stdin
         self.breakpoints = []
         self.fs = FileSystem('./fs-{}/'.format(self.__class__.__name__))
+        self.env = env
 
         if files != {}:
             raise NotImplementedError("files is not supported")
@@ -159,7 +165,8 @@ class Inspector:
             stdout = None
         else:
             stdout = subprocess.PIPE
-        env = {'LD_LIBRARY_PATH': '/vagrant/sample2/file/src/.libs/', 'LD_BIND_NOW': '1'} # FIXME
+        # env = {'LD_LIBRARY_PATH': '/vagrant/sample2/file/src/.libs/', 'LD_BIND_NOW': '1'} # FIXME
+        env = {'LD_LIBRARY_PATH': self.env['LD_LIBRARY_PATH'], 'LD_BIND_NOW': '1'} # FIXME
         self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=stdout, env=env)
         self.pid = self.tracee.pid
         self.debugger = ptrace.debugger.PtraceDebugger()
@@ -182,9 +189,12 @@ class Inspector:
 
     def collect(self, y_variables):
         inspector = self
+        breakpoint_addrs = sorted(set(map(lambda _: _.addr, y_variables)))
+        for v in set(y_variables):
+            if v.addr in breakpoint_addrs:
+                inspector.set_breakpoint(variable=v)
+                breakpoint_addrs.remove(v.addr)
         y = {}
-        for v in y_variables:
-            inspector.set_breakpoint(variable=v)
         while True:
             try:
                 inspector.cont()
@@ -240,6 +250,7 @@ class Inspector:
             self.process.detach()
             self.debugger.quit()
             self.pid = -1
+            self.mmap = None
         if not self.debug:
             try:
                 self.tracee.kill()
@@ -395,7 +406,8 @@ class Inspector:
         insns = self.get_cfg_node_insns_at(rebased_addr=node.addr)
         assert len(insns) > 0
 
-        assign_constraint = __assign_constraint(insns, object_file)
+        # assign_constraint = __assign_constraint(insns, object_file)
+        assign_constraint = ir.ConstraintList()
         jump_not_taken_constraint = __jump_not_taken_constraint(insns, object_file)
         return assign_constraint + [jump_not_taken_constraint]
 
@@ -439,7 +451,7 @@ class Inspector:
             assert(isinstance(_vars, ir.VariableList))
             res = {}
             for var in _vars:
-                res[var] = self.read_var(var)
+                res[var.name] = self.read_var(var)
             return res
         else:
             raise ProcessNotFoundError("Tracee is not attached")
@@ -447,8 +459,8 @@ class Inspector:
 class Tactic:
     @staticmethod
     def near_path_constraint(inspector, node):
-        print("node = {}".format(node))
-        print("node.predecessors = {}".format(node.predecessors))
+        # print("node = {}".format(node))
+        # print("node.predecessors = {}".format(node.predecessors))
         predecessors = node.predecessors
         predecessors_conditions = ir.ConstraintList()
         prev_node = inspector.get_prev_node(node)

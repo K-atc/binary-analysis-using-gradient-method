@@ -82,9 +82,9 @@ class Memory(VariableType):
 
 class Variable(ConstraintIR):
     ### TODO: object name where this variable locates
-    def __init__(self, name, size, addr, vtype, objfile=None):
+    def __init__(self, name, size, addr, vtype, objfile):
         assert isinstance(vtype, VariableType)
-        assert objfile is None or isinstance(objfile, str)
+        assert isinstance(objfile, str)
         self.kind = self.__class__.__name__
         self.name = name
         self.size = size

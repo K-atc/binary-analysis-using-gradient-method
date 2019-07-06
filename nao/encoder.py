@@ -30,6 +30,10 @@ def e(c):
         return c.value
     if isinstance(c, C.Variable):
         return c.name
+    if isinstance(c, C.Assign):
+        return L.Top()
+    if isinstance(c, C.Top):
+        return L.Top()
     raise UnhandledCaseError("encode: c={}".format(c))
 
 def encode_constraint_to_loss_function_ast(constraint):
@@ -54,7 +58,7 @@ def Encode(constraints):
     for v in variables_names:
         eval_locals.update({v: var(v)})
 
-    # print("[*] sage_eval({}, locals={})".format(eval_statement, eval_locals))
+    print("[*] sage_eval('{}', locals={})".format(eval_statement, eval_locals))
     L = sage_eval(eval_statement, locals=eval_locals)
     # print("[*] L = {}".format(L))
     return L
