@@ -116,6 +116,7 @@ class Inspector:
         if rebased_addr and self.debug: print("[*] set_breakpoint(rebased_addr={:#x})".format(rebased_addr))
         if variable:
             assert variable, ir.Variable
+            if self.debug: print("[*] set_breakpoint(variable={})".format(variable))
             if variable.objfile:
                 rebased_addr = self.get_tracee_object_base_addr(variable.objfile) + variable.addr
             else:
@@ -189,6 +190,7 @@ class Inspector:
     def collect(self, y_variables):
         inspector = self
         breakpoint_addrs = sorted(set(map(lambda _: _.addr, y_variables)))
+        if self.debug: print("[*] collect(): breakpoint_addrs = [{}]".format(', '.join("{:#x}".format(x) for x in breakpoint_addrs)))
         for v in set(y_variables):
             if v.addr in breakpoint_addrs:
                 inspector.set_breakpoint(variable=v)
@@ -315,11 +317,11 @@ class Inspector:
 
     def get_cfg_node_insns_at(self, object_name=None, relative_addr=None, rebased_addr=None, node=None):
         if relative_addr:
-            return self.get_cfg_node_at(object_name=None, relative_addr=relative_addr).block.capstone.insns
+            return list(self.get_cfg_node_at(object_name=None, relative_addr=relative_addr).block.capstone.insns)
         if rebased_addr:
-            return self.get_cfg_node_at(object_name=None, rebased_addr=rebased_addr).block.capstone.insns
+            return list(self.get_cfg_node_at(object_name=None, rebased_addr=rebased_addr).block.capstone.insns)
         if node:
-            return node.byte_string
+            return list(node.block.capstone.insns)
         raise UnhandledCaseError("get_cfg_node_insns_at: provide rebased_addr or relative_addr")
 
     def get_node_condition(self, node):
@@ -346,13 +348,32 @@ class Inspector:
             return v
 
         def __assign_constraint(insns, object_file):
-            assign_constraint = ir.ConstraintList()
+            res = ir.ConstraintList()
             ### Assign instruction
             for insn in insns:
                 if insn.id in [capstone.x86.X86_INS_MOV]:
                     v = __collect_insns_ops(insn, object_file)
-                    assign_constraint.append(ir.Assign(v[0], v[1]))
-            return assign_constraint
+                    res.append(ir.Assign(v[0], v[1]))
+            return res
+
+        def __call_function(inspector, insns, object_file):
+            assert isinstance(inspector, Inspector)
+            res = ir.ConstraintList()
+            ### Call instruction
+            for i, insn in enumerate(insns):
+                if insn.id in [capstone.x86.X86_INS_CALL]:
+                    insn_relative_address = self.get_relative_addr(object_name=object_file, rebased_addr=insn.address)
+                    func_addr = insn.operands[0].imm
+                    func_name = inspector.proj.loader.find_plt_stub_name(func_addr)
+                    if func_name == 'strncmp':
+                        call_f = ir.Strncmp([], insn_relative_address, object_file)
+                        reg_name = ['rdi', 'rsi', 'edx']
+                        args = []
+                        for i in range(3):
+                            args.append(ir.Variable("{}_arg{}".format(call_f.name, i), 8, func_addr, ir.Register(reg_name[i]), object_file))
+                        call_f.args = args
+                        res.append(call_f)
+            return res
 
         def __jump_not_taken_constraint(insns, object_file):
             if len(node.successors) < 2:
@@ -383,6 +404,8 @@ class Inspector:
                             return ir.Lt(left, right)
                         if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0
                             return ir.Gt(left, right)
+                        if insn.id == capstone.x86.X86_INS_JLE:  # left - right <= 0
+                            return ir.Gt(left, right)
                     elif compare_insn.id == capstone.x86.X86_INS_TEST:
                         if left == right:
                             if insn.id == capstone.x86.X86_INS_JNE: # jnz
@@ -400,15 +423,15 @@ class Inspector:
 
         if self.debug: print("[*] get_node_condition: visited node {} (addr={:#x})".format(node, node.addr))
 
-        # start_addr = node.addr - self.proj.loader.find_object_containing(node.addr).min_addr
         object_file = self.find_object_containing(rebased_addr=node.addr)
         insns = self.get_cfg_node_insns_at(rebased_addr=node.addr)
         assert len(insns) > 0
 
         # assign_constraint = __assign_constraint(insns, object_file)
         assign_constraint = ir.ConstraintList()
+        call_constraint = __call_function(self, insns, object_file)
         jump_not_taken_constraint = __jump_not_taken_constraint(insns, object_file)
-        return assign_constraint + [jump_not_taken_constraint]
+        return assign_constraint + call_constraint + [jump_not_taken_constraint]
 
     # @return list of constriant IR
     def get_condition_at(self, tactic, object_name=None, relative_addr=None, rebased_addr=None):
@@ -429,14 +452,19 @@ class Inspector:
             return None
         return self.get_cfg_node_at(rebased_addr=prev_addr)
 
+    # @return bytes
+    def read_mem(self, addr, size):
+        return self.process.readBytes(addr, size)
+
     def read_var(self, var):
         if self.debug: print("[*] read_var({})".format(var))
         assert(isinstance(var, ir.Variable))
+        
         reg = self.process.getreg
         mem = self.process.readBytes
         op = var.vtype
         if isinstance(op, ir.Register):
-            return reg(var.vtype.name)
+            return reg(op.name)
         if isinstance(op, ir.Memory):
             if op.index:
                 addr = reg(op.base.name) + reg(op.index.name) * op.scale + op.disp
@@ -450,7 +478,21 @@ class Inspector:
             assert(isinstance(_vars, ir.VariableList))
             res = {}
             for var in _vars:
-                res[var.name] = self.read_var(var)
+                if isinstance(var, ir.Call):
+                    if isinstance(var, ir.Strncmp):
+                        arg = [None] * len(var.args)
+                        for i, v in enumerate(var.args):
+                            value = self.read_var(v)
+                            res[v.name] = value
+                            arg[i] = value
+                        res[var.n.name] = arg[2]
+                        res[var.s1.name] = self.read_mem(arg[0], arg[2])
+                        res[var.s2.name] = self.read_mem(arg[1], arg[2])
+                    else:
+                        import ipdb; ipdb.set_trace()
+                        raise UnhandledCaseError("missing ir.Call case: {}".format(var))
+                else:
+                    res[var.name] = self.read_var(var)
             return res
         else:
             raise ProcessNotFoundError("Tracee is not attached")
@@ -461,15 +503,18 @@ class Tactic:
         # print("node = {}".format(node))
         # print("node.predecessors = {}".format(node.predecessors))
         predecessors = node.predecessors
-        predecessors_conditions = ir.ConstraintList()
         prev_node = inspector.get_prev_node(node)
         if prev_node:
             predecessors.append(prev_node)
             predecessors += prev_node.predecessors
+        for pnode in node.predecessors:
+            predecessors.append(inspector.get_prev_node(pnode))
         # import ipdb; ipdb.set_trace()
+
+        predecessors_conditions = ir.ConstraintList()
         predecessors = set(predecessors)
         for predecessor in predecessors:
-            if predecessor.is_simprocedure: # skip symbolic procedure (symprocedure is introduced by angr)
+            if predecessor.is_simprocedure: # skip symbolic procedure (simprocedure is introduced by angr)
                 continue
             predecessor_condition = inspector.get_node_condition(predecessor)
             if predecessor_condition != ir.Top():

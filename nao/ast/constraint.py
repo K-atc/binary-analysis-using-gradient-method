@@ -7,7 +7,8 @@ from . import ast
 from ..exceptions import * # pylint: disable=W0614
 
 class ConstraintIR(ast.Ast):
-    pass
+    def is_variable(self):
+        return False
 
 class VariableList(list):
     def __add__(self, other):
@@ -116,6 +117,9 @@ class Variable(ConstraintIR):
     def __hash__(self):
         return hash(self.__repr__())
 
+    def is_variable(self):
+        return True
+
     def get_variables(self):
         return VariableList([self])
 
@@ -169,6 +173,35 @@ class Ge(BinOp):
 class Assign(BinOp):
     def get_variables(self):
         return VariableList()
+
+class FuncArg(object):
+    def __init__(self, call, name):
+        self.name = "{}_{}".format(call.name, name)
+
+class Call(Variable):
+    def __init__(self, args, addr, objfile):
+        assert args is None or isinstance(args, list)
+        self.kind = self.__class__.__name__
+        self.name = "Call_{}_{:x}".format(self.__class__.__name__, addr)
+        self.size = 0
+        self.addr = addr
+        self.args = args
+        self.vtype = Call
+        self.objfile = objfile
+
+    def __repr__(self):
+        return "Call.{}({}, {:#x}, in {})".format(self.__class__.__name__, self.args, self.addr, self.objfile)
+
+    def get_variables(self):
+        # return VariableList(filter(lambda _: _.is_variable(), self.args))
+        return VariableList([self])
+
+class Strncmp(Call):
+    def __init__(self, *args, **kwargs):
+        super(Strncmp, self).__init__(*args, **kwargs)
+        self.s1 = FuncArg(self, "s1")
+        self.s2 = FuncArg(self, "s2")
+        self.n = FuncArg(self, "n")
 
 if __name__ == "__main__":
     print("[*] get_variables()")

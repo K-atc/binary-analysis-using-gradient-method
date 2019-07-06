@@ -1,4 +1,4 @@
-class Ast:
+class Ast(object):
     pass
 
 class Term(Ast):
