@@ -1,8 +1,9 @@
 import os, sys
 import functools
 
-from engine import *
-from nao.util import strip_null, X, Program, Tactic
+from engine import NeuSolv, stat
+from nao.util import strip_null, Tactic
+from nao.program import Program, X
 from nao.encoder import encode_constraint_to_loss_function_ast
 
 def xadapter(v):
@@ -14,7 +15,7 @@ def xadapter(v):
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
-        print("-> v = {}".format(x))
+        print("-> v = {}".format(v))
         exit(1)
 
 def yadapter(variables, y):
@@ -52,7 +53,7 @@ def main(main_file):
 
     ### Solve constraints
     ### TODO: auto set initial x 
-    model = NeuSolv(N, L, zero_vector(8), xadapter)
+    model = NeuSolv(N, L, zero_vector(8), xadapter) # pylint: disable=E0602
 
     print("=" * 8)
     if model:

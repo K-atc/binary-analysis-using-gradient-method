@@ -4,7 +4,7 @@ import sys
 import numbers
 
 from . import ast
-from ..exceptions import *
+from ..exceptions import * # pylint: disable=W0614
 
 class ConstraintIR(ast.Ast):
     pass
@@ -56,7 +56,7 @@ class Register(VariableType):
     def __init__(self, name):
         assert name is not None
         if sys.version_info.major == 2:
-            if isinstance(name, unicode):
+            if isinstance(name, unicode): # pylint: disable=E0602
                 name = str(name)
         assert isinstance(name, str), "name = {} ({})".format(name, type(name))
         self.kind = self.__class__.__name__        
@@ -82,9 +82,9 @@ class Memory(VariableType):
 
 class Variable(ConstraintIR):
     ### TODO: object name where this variable locates
-    def __init__(self, name, size, addr, vtype, objfile):
+    def __init__(self, name, size, addr, vtype, objfile=None):
         assert isinstance(vtype, VariableType)
-        assert isinstance(objfile, str)
+        assert objfile is None or isinstance(objfile, str)
         self.kind = self.__class__.__name__
         self.name = name
         self.size = size

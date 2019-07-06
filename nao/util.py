@@ -23,7 +23,6 @@ CPU_SUB_REGISTERS['r13d'] = ('r13', 0, 0xffffffff)
 from .ast import constraint as ir
 from .exceptions import *
 from .fs import FileSystem
-from .encoder import Encode
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 md.detail = True
@@ -198,7 +197,7 @@ class Inspector:
         while True:
             try:
                 inspector.cont()
-            except Exception as e:
+            except Exception as e: # pylint: disable=W0612
                 # print(e)
                 break
             if not inspector.is_tracee_attached():
@@ -215,7 +214,7 @@ class Inspector:
                 b.desinstall(set_ip=True)
             ### Reinstall breakpoint
             inspector.process.singleStep()
-            inspector.process.waitSignals(signal.SIGTRAP)
+            inspector.process.waitSignals(signal.SIGTRAP) # pylint: disable=E1101
             inspector.set_breakpoint(rebased_addr=breakpoint_addr)
         inspector.stop()
         return y
@@ -225,7 +224,7 @@ class Inspector:
             if self.debug: print("[*] cont():")
             try:
                 self.process.cont()
-                event = self.process.waitSignals(signal.SIGINT, signal.SIGTRAP)
+                event = self.process.waitSignals(signal.SIGINT, signal.SIGTRAP) # pylint: disable=E1101
                 if self.debug: print("Recieved event={}".format(event))
                 if self.debug: print("[*] handled signal")
             except ProcessExit as event:
@@ -326,7 +325,7 @@ class Inspector:
     def get_node_condition(self, node):
         def __collect_insns_ops(insn, object_file):
             v = []
-            for c, op in enumerate(insn.operands):
+            for i, op in enumerate(insn.operands): # pylint: disable=W0612
                 insn_relative_address = self.get_relative_addr(object_name=object_file, rebased_addr=insn.address)
                 if op.type == capstone.x86.X86_OP_REG:
                     v.append(ir.Variable(var(insn, op), op.size, insn_relative_address, ir.Register(insn.reg_name(op.reg)), object_file))
@@ -475,73 +474,8 @@ class Tactic:
             predecessor_condition = inspector.get_node_condition(predecessor)
             if predecessor_condition != ir.Top():
                 predecessors_conditions += predecessor_condition
-        node_constraint = inspector.get_node_condition(node)
-        for c in node_constraint:
-            ProcessEvent
+        node_constraint = inspector.get_node_condition(node)            
         return predecessors_conditions + node_constraint
-
-class X():
-    def __init__(self, args=[], stdin='', files={}):
-        assert isinstance(args, list)
-        assert isinstance(stdin, str)
-        self.args = args
-        self.stdin = stdin
-        self.files = files
-
-    def __repr__(self):
-        return "{}(args={!r}, stdin={!r}, files={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files)
-
-class Program:
-    # @param xadapter encodes vector to vales of x variables (program inputs)
-    # @param yadapter encodes values of y variables to vector
-    def __init__(self, program, xadapter, yadapter, debug=False):
-        assert isinstance(program, str), "'program` must be a path to program"
-        assert callable(xadapter), "`adapter` must be a fucntion"
-        self.program = program
-        self.xadapter = xadapter
-        self.yadapter = yadapter
-        # self.inspector = Inspector(program, debug=True)
-        self.inspector = Inspector(program, debug=False)
-        self.debug = debug
-
-    def get_constraints(self, tactic, object_name=None, relative_addr=None, rebased_addr=None):
-        if relative_addr:
-            return self.inspector.get_condition_at(tactic, object_name=object_name, relative_addr=relative_addr)
-        if rebased_addr:
-            return self.inspector.get_condition_at(tactic, object_name=object_name, rebased_addr=rebased_addr)
-        raise UnhandledCaseError("provide relative_addr or rebased_addr")
-
-    def N(self, constraint):
-        assert isinstance(constraint, ir.ConstraintIR)
-        return functools.partial(self.call_with_adapter, constraint.get_variables())
-    
-    def L(self, constraint):
-        assert isinstance(constraint, ir.ConstraintIR)
-        return Encode(constraint)
-
-    def call(self, y_variables, x):
-        if self.debug: print("[*] call(y=..., x={})".format(x))
-        assert isinstance(y_variables, ir.VariableList)
-        assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
-
-        self.inspector.run(args=x.args, stdin=x.stdin, files={})
-        return self.inspector.collect(y_variables)
-
-    def call_with_adapter(self, y_variables, x):
-        # print("call_with_adpter: x = {}".format(x))
-        return self.yadapter(y_variables, self.call(y_variables, self.xadapter(x)))
-
-    def run(self, x):
-        assert(isinstance(x, X))
-        if self.debug: print("run(x={})".format(x))
-        args = [self.program] + x.args
-
-        if x.files != {}:
-            raise NotImplementedError("files is not supported")
-
-        p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        return p.communicate(x.stdin)
 
 def strip_null(s):
     first_null_pos = s.find('\x00')

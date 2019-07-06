@@ -60,12 +60,6 @@ def NeuSolv(N, L, x0, xadapter):
         print("      = {}".format(xadapter(x[k])))
         print("y[{}] = {}".format(k, y[k]))
 
-        # ### Out of range check
-        # ### FIXME: Impllement correctly
-        # if x[k][0] >= 0x100:
-        #     print("[!] Out of range value")
-        #     break
-
         ### Check current loss
         print("L(y[{}])) = {}".format(k, L(*y[k])))
         if L(*y[k]) <= 1e-2: 
