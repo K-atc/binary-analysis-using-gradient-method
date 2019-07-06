@@ -7,6 +7,7 @@
 peda-session-*.txt
 *.pyc
 ubuntu-bionic-18.04-cloudimg-console.log
+proj.loader.all_object
 *.so
 *.xz
 *.png

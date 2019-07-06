@@ -8,6 +8,7 @@ import functools
 import ptrace.debugger
 import ptrace.error
 from ptrace.debugger.process_event import ProcessEvent, NewProcessEvent, ProcessExit
+from ptrace.debugger.process_error import ProcessError
 import angr
 import capstone
 
@@ -72,11 +73,13 @@ class Inspector:
         self.tracee_main_object_base_addr = 0
 
         ### angr setup
+        ### NOTE: `ld_path` is usable in Python3
+        ### About `ld_path`: https://github.com/angr/cle/blob/master/README.md
         self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']})
-        print(self.proj.loader.all_objects)
-        # print(dir(self.proj.loader.all_objects[0]))
-        # exit(1)
-        self.cfg = self.proj.analyses.CFGFast()
+        # self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1']})
+        print("proj.loader.all_objects = {}".format(self.proj.loader.all_objects))
+        self.cfg = self.proj.analyses.CFGFast() # CFGFast() misses predecessors not jointed to the block
+        # self.cfg = self.proj.analyses.CFGEmulated() # Not works for external library (?)
 
     def __del__(self):
         self.stop()
@@ -115,12 +118,23 @@ class Inspector:
             rebased_addr = self.get_tracee_object_base_addr(variable.objfile) + variable.addr
         if relative_addr:
             if self.debug: print("[*] set_breakpoint(object_name='{}', relative_addr={:#x})".format(object_name, relative_addr))
+            if not relative_addr < 0x400000:
+                print("[!] set_breakpoint(object_name='{}', relative_addr={:#x}): relative_addr may be rebased address".format(object_name, relative_addr))
             if object_name:
                 rebased_addr = self.get_tracee_object_base_addr(object_name) + relative_addr
             else:
                 rebased_addr = self.tracee_main_object_base_addr + relative_addr
         if rebased_addr:
-            return self.process.createBreakpoint(rebased_addr)
+            try:
+                return self.process.createBreakpoint(rebased_addr)
+            except ProcessError as e:
+                if variable:
+                    marker = "{}".format(variable)
+                else:
+                    marker = "object={} ({:#x})".format(object_name, self.get_tracee_object_base_addr(object_name))
+                self.process.dumpMaps()
+                print("[!] Failed to set breakpoint: {}, rebased_address={:#x}".format(marker, rebased_addr))
+                raise e
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
     def run(self, args=[], stdin=b'', files={}):
@@ -144,7 +158,7 @@ class Inspector:
         if self.debug:
             stdout = None
         else:
-            stdout = subprocess.PIPEfile
+            stdout = subprocess.PIPE
         env = {'LD_LIBRARY_PATH': '/vagrant/sample2/file/src/.libs/', 'LD_BIND_NOW': '1'} # FIXME
         self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=stdout, env=env)
         self.pid = self.tracee.pid
@@ -161,10 +175,40 @@ class Inspector:
 
         ### Execute to main() to laod all external libraries
         main_addr = self.find_symbol("main").relative_addr
-        self.set_breakpoint(object_name=self.main_file, relative_addr=main_addr)
+        main_b = self.set_breakpoint(object_name=self.main_file, relative_addr=main_addr)
         self.cont()
+        main_b.desinstall(set_ip=True)
         self.get_tracee_mmap()
 
+    def collect(self, y_variables):
+        inspector = self
+        y = {}
+        for v in y_variables:
+            inspector.set_breakpoint(variable=v)
+        while True:
+            try:
+                inspector.cont()
+            except Exception as e:
+                # print(e)
+                break
+            if not inspector.is_tracee_attached():
+                break
+            pc = inspector.process.getInstrPointer()
+            breakpoint_addr = pc - 1
+            objfile = inspector.find_object_containing(tracee_rebased_addr=breakpoint_addr)
+            addr = inspector.get_relative_addr(object_name=objfile, tracee_rebased_addr=breakpoint_addr)
+            res = inspector.read_vars(y_variables.find(objfile=objfile, addr=addr))
+            y.update(res)
+            b = inspector.process.findBreakpoint(breakpoint_addr)
+            if b:
+                if self.debug: print("[*] remove breakpoint at {:#x}".format(b.address))
+                b.desinstall(set_ip=True)
+            ### Reinstall breakpoint
+            inspector.process.singleStep()
+            inspector.process.waitSignals(signal.SIGTRAP)
+            inspector.set_breakpoint(rebased_addr=breakpoint_addr)
+        inspector.stop()
+        return y
 
     def cont(self):
         if self.pid > 0:
@@ -215,8 +259,11 @@ class Inspector:
     def get_relative_addr(self, object_name=None, rebased_addr=None, tracee_rebased_addr=None):
         if rebased_addr:
             if object_name:
+                object_name = os.path.basename(object_name)
                 base_addr = self.proj.loader.shared_objects[object_name].min_addr
             else:
+                if rebased_addr > 0x2000000:
+                    print("[!] get_relative_addr(object_name={}, rebased_addr={}, tracee_rebased_addr={}): May missing object_name".format(object_name, rebased_addr, tracee_rebased_addr))
                 base_addr = self.proj.loader.main_object.min_addr
             return rebased_addr - base_addr
         if tracee_rebased_addr:
@@ -238,8 +285,9 @@ class Inspector:
 
     def get_cfg_node_at(self, object_name=None, relative_addr=None, rebased_addr=None):
         if not relative_addr and not rebased_addr:
-            raise UnhandledCaseError("get_cfg_node_code_at: provide rebased_addr or relative_addr")
+            raise UnhandledCaseError("get_cfg_node_insns_at: provide rebased_addr or relative_addr")
         if relative_addr:
+            if self.debug: print("[*] get_cfg_node_at(object_name={}, relative_addr={:#x})".format(object_name, relative_addr))
             if object_name:
                 addr = self.proj.loader.shared_objects[object_name].min_addr + relative_addr
             else:
@@ -255,90 +303,120 @@ class Inspector:
             raise InvalidAddressError("get_cfg_node_at: Basic block starts with provided address {:#x} does not exist".format(addr))
         return res
 
-    def get_cfg_node_code_at(self, object_name=None, relative_addr=None, rebased_addr=None, node=None):
+    def get_cfg_node_insns_at(self, object_name=None, relative_addr=None, rebased_addr=None, node=None):
         if relative_addr:
-            return self.get_cfg_node_at(object_name=None, relative_addr=relative_addr).byte_string
+            return self.get_cfg_node_at(object_name=None, relative_addr=relative_addr).block.capstone.insns
         if rebased_addr:
-            return self.get_cfg_node_at(object_name=None, rebased_addr=rebased_addr).byte_string
+            return self.get_cfg_node_at(object_name=None, rebased_addr=rebased_addr).block.capstone.insns
         if node:
             return node.byte_string
-        raise UnhandledCaseError("get_cfg_node_code_at: provide rebased_addr or relative_addr")
+        raise UnhandledCaseError("get_cfg_node_insns_at: provide rebased_addr or relative_addr")
 
     def get_node_condition(self, node):
-        if self.debug: print("[*] get_node_condition: visited node {} (addr={:#x})".format(node, node.addr))
-        if len(node.successors) < 2:
-            return ir.Top()
-        else:
-            start_addr = node.addr - self.proj.loader.find_object_containing(node.addr).min_addr
-            object_file = self.find_object_containing(rebased_addr=node.addr)
-            code = self.get_cfg_node_code_at(rebased_addr=node.addr)
-            insns = list(md.disasm(code, start_addr))
-
-            ### Compare instruction
+        def __collect_insns_ops(insn, object_file):
             v = []
-            compare_inst = insns[-2]
-            for insn in [insns[-2]]:
-                for c, op in enumerate(insn.operands):
-                    if op.type == capstone.x86.X86_OP_REG:
-                        v.append(ir.Variable(var(insn, op), op.size, insn.address, ir.Register(insn.reg_name(op.reg)), object_file))
-                    if op.type == capstone.x86.X86_OP_IMM:
-                        v.append(ir.Value(op.imm))
-                    if op.type == capstone.x86.X86_OP_MEM:
-                        if op.mem.index:
-                            reg_index = ir.Register(insn.reg_name(op.mem.index))
-                        else:
-                            reg_index = None
-                        vmem = ir.Memory(
-                            ir.Register(insn.reg_name(op.mem.base)),
-                            reg_index,
-                            op.mem.scale,
-                            op.mem.disp
-                            )
-                        v.append(ir.Variable(var(insn, op), op.size, insn.address, vmem, object_file))
-                if insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_TEST]:
-                    left = v[0]
-                    right = v[1]
-                if insn.id in [capstone.x86.X86_INS_MOV]:
-                    left = v[0]
-                    right = ir.Value(0)
-
-            ### Conditional Branch
-            for insn in [insns[-1]]:
-                if compare_inst.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_MOV]:
-                    # NOTE: Returns constraint of jump *not* taken
-                    if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                        return ir.Eq(left, right)
-                    if insn.id == capstone.x86.X86_INS_JE:  # jz
-                        return ir.Ne(left, right)
-                    if insn.id == capstone.x86.X86_INS_JA:  # left - right >= 0
-                        return ir.Lt(left, right)
-                    if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0
-                        return ir.Gt(left, right)
-                elif compare_inst.id == capstone.x86.X86_INS_TEST:
-                    if left == right:
-                        if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                            return ir.Eq(left, ir.Value(0))
-                        if insn.id == capstone.x86.X86_INS_JE:  # jz
-                            return ir.Ne(left, ir.Value(0))
+            for c, op in enumerate(insn.operands):
+                insn_relative_address = self.get_relative_addr(object_name=object_file, rebased_addr=insn.address)
+                if op.type == capstone.x86.X86_OP_REG:
+                    v.append(ir.Variable(var(insn, op), op.size, insn_relative_address, ir.Register(insn.reg_name(op.reg)), object_file))
+                if op.type == capstone.x86.X86_OP_IMM:
+                    v.append(ir.Value(op.imm))
+                if op.type == capstone.x86.X86_OP_MEM:
+                    if op.mem.index:
+                        reg_index = ir.Register(insn.reg_name(op.mem.index))
                     else:
+                        reg_index = None
+                    vmem = ir.Memory(
+                        ir.Register(insn.reg_name(op.mem.base)),
+                        reg_index,
+                        op.mem.scale,
+                        op.mem.disp
+                        )
+                    v.append(ir.Variable(var(insn, op), op.size, insn_relative_address, vmem, object_file))
+            return v
+
+        def __assign_constraint(insns, object_file):
+            assign_constraint = ir.ConstraintList()
+            ### Assign instruction
+            for insn in insns:
+                if insn.id in [capstone.x86.X86_INS_MOV]:
+                    v = __collect_insns_ops(insn, object_file)
+                    assign_constraint.append(ir.Assign(v[0], v[1]))
+            return assign_constraint
+
+        def __jump_not_taken_constraint(insns, object_file):
+            if len(node.successors) < 2:
+                return ir.Top()
+            else:
+                compare_insn = insns[-2]
+                jcc_insn = insns[-1]
+                
+                ### Compare Instruction
+                for insn in [compare_insn]:
+                    v = __collect_insns_ops(insn, object_file)
+                    if insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_TEST]:
+                        left = v[0]
+                        right = v[1]
+                    if insn.id in [capstone.x86.X86_INS_MOV]:
+                        left = v[0]
+                        right = ir.Value(0)
+
+                ### Conditional Branch
+                for insn in [jcc_insn]:
+                    if compare_insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_MOV]:
+                        # NOTE: Returns constraint of jump *not* taken
                         if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                            return ir.Eq(ir.Band(left, right), ir.Value(0))
+                            return ir.Eq(left, right)
                         if insn.id == capstone.x86.X86_INS_JE:  # jz
-                            return ir.Ne(ir.Band(left, right), ir.Value(0))
-                else:
-                    raise UnhandledCaseError("get_node_condition: Unhandled instruction '{:#x}: {} {}'".format(compare_inst.address, compare_inst.mnemonic, compare_inst.op_str))
-                raise UnhandledCaseError("get_node_condition: Unsupported instruction '{:#x}: {} {}'".format(insn.address, insn.mnemonic, insn.op_str))
+                            return ir.Ne(left, right)
+                        if insn.id == capstone.x86.X86_INS_JA:  # left - right >= 0
+                            return ir.Lt(left, right)
+                        if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0
+                            return ir.Gt(left, right)
+                    elif compare_insn.id == capstone.x86.X86_INS_TEST:
+                        if left == right:
+                            if insn.id == capstone.x86.X86_INS_JNE: # jnz
+                                return ir.Eq(left, ir.Value(0))
+                            if insn.id == capstone.x86.X86_INS_JE:  # jz
+                                return ir.Ne(left, ir.Value(0))
+                        else:
+                            if insn.id == capstone.x86.X86_INS_JNE: # jnz
+                                return ir.Eq(ir.Band(left, right), ir.Value(0))
+                            if insn.id == capstone.x86.X86_INS_JE:  # jz
+                                return ir.Ne(ir.Band(left, right), ir.Value(0))
+                    else:
+                        raise UnhandledCaseError("get_node_condition: Unhandled instruction '{:#x}: {} {}'".format(compare_insn.address, compare_insn.mnemonic, compare_insn.op_str))
+                    raise UnhandledCaseError("get_node_condition: Unsupported instruction '{:#x}: {} {}'".format(insn.address, insn.mnemonic, insn.op_str))
+
+        if self.debug: print("[*] get_node_condition: visited node {} (addr={:#x})".format(node, node.addr))
+
+        # start_addr = node.addr - self.proj.loader.find_object_containing(node.addr).min_addr
+        object_file = self.find_object_containing(rebased_addr=node.addr)
+        insns = self.get_cfg_node_insns_at(rebased_addr=node.addr)
+        assert len(insns) > 0
+
+        assign_constraint = __assign_constraint(insns, object_file)
+        jump_not_taken_constraint = __jump_not_taken_constraint(insns, object_file)
+        return assign_constraint + [jump_not_taken_constraint]
 
     # @return list of constriant IR
     def get_condition_at(self, tactic, object_name=None, relative_addr=None, rebased_addr=None):
         assert(callable(tactic))
         if not relative_addr and not rebased_addr:
-            raise UnhandledCaseError("get_cfg_node_code_at: provide rebased_addr or relative_addr")
+            raise UnhandledCaseError("provide rebased_addr or relative_addr")
         if relative_addr:
+            if object_name is None and relative_addr >= 0x400000:
+                print("[!] get_condition_at(relative_addr={:#x}): Given relative_addr seems to be rebased address".format(relative_addr))
             node = self.get_cfg_node_at(object_name=object_name, relative_addr=relative_addr)
         if rebased_addr:
-            node = self.get_cfg_node_at(object_name=object_name, rebased_addr=rebased_addr)
+            node = self.get_cfg_node_at(rebased_addr=rebased_addr)
         return tactic(self, node)
+
+    def get_prev_node(self, node):
+        prev_addr = node.addr - 1
+        if prev_addr < node.function_address:
+            return None
+        return self.get_cfg_node_at(rebased_addr=prev_addr)
 
     def read_var(self, var):
         if self.debug: print("[*] read_var({})".format(var))
@@ -361,7 +439,7 @@ class Inspector:
             assert(isinstance(_vars, ir.VariableList))
             res = {}
             for var in _vars:
-                res[var.name] = self.read_var(var)
+                res[var] = self.read_var(var)
             return res
         else:
             raise ProcessNotFoundError("Tracee is not attached")
@@ -369,16 +447,26 @@ class Inspector:
 class Tactic:
     @staticmethod
     def near_path_constraint(inspector, node):
+        print("node = {}".format(node))
+        print("node.predecessors = {}".format(node.predecessors))
+        predecessors = node.predecessors
         predecessors_conditions = ir.ConstraintList()
-        for predecessor in node.predecessors:
+        prev_node = inspector.get_prev_node(node)
+        if prev_node:
+            predecessors.append(prev_node)
+            predecessors += prev_node.predecessors
+        # import ipdb; ipdb.set_trace()
+        predecessors = set(predecessors)
+        for predecessor in predecessors:
+            if predecessor.is_simprocedure: # skip symbolic procedure (symprocedure is introduced by angr)
+                continue
             predecessor_condition = inspector.get_node_condition(predecessor)
             if predecessor_condition != ir.Top():
-                predecessors_conditions.append(predecessor_condition)
+                predecessors_conditions += predecessor_condition
         node_constraint = inspector.get_node_condition(node)
-        if node_constraint == ir.Top():
-            return predecessors_conditions
-        else:
-            return predecessors_conditions + ir.ConstraintList([node_constraint])
+        for c in node_constraint:
+            ProcessEvent
+        return predecessors_conditions + node_constraint
 
 class X():
     def __init__(self, args=[], stdin='', files={}):
@@ -424,43 +512,8 @@ class Program:
         assert isinstance(y_variables, ir.VariableList)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
-        inspector = self.inspector
-
-        inspector.run(args=x.args, stdin=x.stdin, files={})
-        y = {}
-        for v in y_variables:
-            b = inspector.set_breakpoint(variable=v)
-        while True:
-            try:
-                inspector.cont()
-            except Exception as e:
-                # print(e)
-                break
-            if not inspector.is_tracee_attached():
-                break
-            pc = inspector.process.getInstrPointer()
-            breakpoint_addr = pc - 1
-            objfile = inspector.find_object_containing(tracee_rebased_addr=breakpoint_addr)
-            addr = inspector.get_relative_addr(object_name=objfile, tracee_rebased_addr=breakpoint_addr)
-            objfile = inspector.find_object_containing(tracee_rebased_addr=breakpoint_addr)
-            res = inspector.read_vars(y_variables.find(objfile=objfile, addr=addr))
-            # if self.debug: print("[*] read_var() = {}".format(res))
-            y.update(res)
-            b = self.inspector.process.findBreakpoint(breakpoint_addr)
-            if b:
-                print("!")
-                if self.debug: print("[*] remove breakpoint at {:#x}".format(b.address))
-                b.desinstall(set_ip=True)
-            ### Reinstall breakpoint
-            inspector.process.singleStep()
-            # self.inspector.cont()
-            inspector.process.waitSignals(signal.SIGTRAP)
-            inspector.set_breakpoint(rebased_addr=breakpoint_addr)
-
-
-        inspector.stop()
-        if self.debug: print("y = {}".format(y))
-        return y
+        self.inspector.run(args=x.args, stdin=x.stdin, files={})
+        return self.inspector.collect(y_variables)
 
     def call_with_adapter(self, y_variables, x):
         # print("call_with_adpter: x = {}".format(x))

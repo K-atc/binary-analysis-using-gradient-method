@@ -31,7 +31,7 @@ class ConstraintList(list, ConstraintIR):
         res = []
         for const in self:
             res += const.get_variables()
-        return VariableList(sorted(res))
+        return VariableList(sorted(set(res)))
 
 class Term(ast.Term, ConstraintIR):
     def get_variables(self):
@@ -94,7 +94,7 @@ class Variable(ConstraintIR):
 
     def __eq__(self, other):
         if isinstance(other, Variable):
-            return (self.name == other.name) and (self.size == other.size) and (self.addr == self.addr)
+            return (self.name == other.name) and (self.size == other.size) and (self.addr == other.addr) and (self.objfile == other.objfile)
         else:
             return False
 
@@ -112,6 +112,9 @@ class Variable(ConstraintIR):
             return "{}({}, {}, {:#x}, {}, in {})".format(self.kind, self.name, self.size, self.addr, self.vtype, os.path.basename(self.objfile))
         else:
             return "{}({}, {}, {:#x}, {})".format(self.kind, self.name, self.size, self.addr, self.vtype)
+
+    def __hash__(self):
+        return hash(self.__repr__())
 
     def get_variables(self):
         return VariableList([self])
@@ -162,6 +165,10 @@ class Gt(BinOp):
 
 class Ge(BinOp):
     pass
+
+class Assign(BinOp):
+    def get_variables(self):
+        return VariableList()
 
 if __name__ == "__main__":
     print("[*] get_variables()")

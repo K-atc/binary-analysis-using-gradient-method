@@ -8,3 +8,4 @@ traceme
 ptrace-loader
 
 *.s
+*.i64
