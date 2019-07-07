@@ -4,7 +4,6 @@ import functools
 from engine import NeuSolv, stat
 from nao.util import strip_null, Tactic
 from nao.program import Program, X
-from nao.encoder import encode_constraint_to_loss_function_ast
 
 def xadapter(v):
     try:

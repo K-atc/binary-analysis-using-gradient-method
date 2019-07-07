@@ -72,7 +72,7 @@ class Inspector:
         self.tracee_main_object_base_addr = 0
 
         ### angr setup
-        ### NOTE: `ld_path` is usable in Python3
+        ### NOTE: `ld_path` is usable in Python3 (latest angr can't be installed in Python2)
         ### About `ld_path`: https://github.com/angr/cle/blob/master/README.md
         # self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1'], 'ld_path': ['/vagrant/sample2/file/src/.libs/']}) # FIXME
         self.proj = angr.Project(self.main_file, auto_load_libs=False, load_options={'force_load_libs': ['libmagic.so.1']})
@@ -142,7 +142,7 @@ class Inspector:
                 raise e
         raise UnhandledCaseError("set_breakpoint: provide rebased_addr or relative_addr")
 
-    def run(self, args=[], stdin=b'', files={}, env={'LD_LIBRARY_PATH':''}):
+    def run(self, args=[], stdin=b'', files={}, env={}):
         assert(isinstance(args, list))
         assert(isinstance(stdin, bytes))
         if self.debug: print("run(args={!r}, stdin={}, files={})".format(args, stdin, files))
@@ -153,12 +153,12 @@ class Inspector:
         self.fs = FileSystem('./fs-{}/'.format(self.__class__.__name__))
         self.env = env
 
-        if files != {}:
-            raise NotImplementedError("files is not supported")
+        for file_path, file_content in files.items():
+            self.fs.create(file_path, data=file_content)
 
         ### create stdin
         ### TODO: Hook open & read syscall
-        f_stdin = self.fs.create('stdin', data=stdin)
+        f_stdin = self.fs.create('.stdin', data=stdin)
 
         ### ptrace setup
         if self.debug:
@@ -166,7 +166,8 @@ class Inspector:
         else:
             stdout = subprocess.PIPE
         # env = {'LD_LIBRARY_PATH': '/vagrant/sample2/file/src/.libs/', 'LD_BIND_NOW': '1'} # FIXME
-        env = {'LD_LIBRARY_PATH': self.env['LD_LIBRARY_PATH'], 'LD_BIND_NOW': '1'} # FIXME
+        if env is not {}:
+            env = {'LD_LIBRARY_PATH': env['LD_LIBRARY_PATH'], 'LD_BIND_NOW': '1'} # FIXME
         self.tracee = subprocess.Popen(args, stdin=f_stdin, stdout=stdout, env=env)
         self.pid = self.tracee.pid
         self.debugger = ptrace.debugger.PtraceDebugger()
@@ -458,11 +459,12 @@ class Inspector:
 
     def read_var(self, var):
         if self.debug: print("[*] read_var({})".format(var))
-        assert(isinstance(var, ir.Variable))
+        assert isinstance(var, ir.Variable)
         
         reg = self.process.getreg
         mem = self.process.readBytes
         op = var.vtype
+        assert not isinstance(op, ir.NullType)
         if isinstance(op, ir.Register):
             return reg(op.name)
         if isinstance(op, ir.Memory):
@@ -485,12 +487,22 @@ class Inspector:
                             value = self.read_var(v)
                             res[v.name] = value
                             arg[i] = value
-                        res[var.n.name] = arg[2]
-                        res[var.s1.name] = self.read_mem(arg[0], arg[2])
-                        res[var.s2.name] = self.read_mem(arg[1], arg[2])
+                        res[var.name] = '###DO#NOT#USE###' # NOTE: DO NOT USE THIS VALUE
+                        n = arg[2]
+                        s1 = self.read_mem(arg[0], arg[2])
+                        s2 = self.read_mem(arg[1], arg[2])
+                        res[var.n.name] = n
+                        res[var.s1.name] = s1
+                        res[var.s2.name] = s2
+                        ### FIXME: Dirty implementation
+                        for i in range(arg[2]):
+                            res["{}_{}".format(var.s1.name, i)] = s1[i]
+                            res["{}_{}".format(var.s2.name, i)] = s2[i]                    
                     else:
                         import ipdb; ipdb.set_trace()
                         raise UnhandledCaseError("missing ir.Call case: {}".format(var))
+                elif isinstance(var, ir.FuncArg):
+                    pass # Do not need to read value. There process is done in processing `Call`
                 else:
                     res[var.name] = self.read_var(var)
             return res

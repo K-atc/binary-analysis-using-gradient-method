@@ -2,6 +2,7 @@
 /.vagrant
 *.sage.py
 *.tar.gz
+*.tar.bz2
 /pin-*
 .gdb_history
 peda-session-*.txt
@@ -14,5 +15,9 @@ proj.loader.all_object
 *.s
 pin-*
 
+/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
+/sample.tar
 /engine.py
 /fs-*/
+
+/bugs

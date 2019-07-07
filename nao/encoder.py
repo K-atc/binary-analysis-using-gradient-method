@@ -6,6 +6,11 @@ from .exceptions import *
 from .loss_function import L_op
 
 def e(c):
+    if isinstance(c, C.Call):
+        if isinstance(c, C.Strncmp):
+            # FIXME: Incomplete implementaiton. Fixed n
+            return L.VEq(L.Vector(c.s1.name), L.Vector(c.s2.name), 8)
+        raise UnhandledCaseError("Missing case for Call: {}".format(c))
     if isinstance(c, C.Land):
         return L.Land(e(c.left), e(c.right))
     if isinstance(c, C.Lor):
@@ -27,9 +32,9 @@ def e(c):
     if isinstance(c, C.Ne):
         return L.Ne(e(c.left), e(c.right))
     if isinstance(c, C.Value):
-        return c.value
+        return L.Value(c.value)
     if isinstance(c, C.Variable):
-        return c.name
+        return L.Variable(c.name)
     if isinstance(c, C.Assign):
         return L.Top()
     if isinstance(c, C.Top):
@@ -47,21 +52,21 @@ def encode_constraint_to_loss_function_ast(constraint):
         return e(constraint)
 
 def Encode(constraints):
-    L = encode_constraint_to_loss_function_ast(constraints)
-    variables_names = map(lambda _: _.name, constraints.get_variables())
-    print("variables_names = {}".format(variables_names))
-    var(' '.join(variables_names))
-    eval_statement = "symbolic_expression({}).function({})".format(L, ', '.join(variables_names))
+    losss_function_ast = encode_constraint_to_loss_function_ast(constraints)
+    L_varaibles = losss_function_ast.get_variables()
+    variables_names = map(lambda _: _.name, L_varaibles)
+    print("[*] variables_names = {}".format(variables_names))
+    var(' '.join(variables_names)) # pylint: disable=E0602
+    eval_statement = "symbolic_expression({}).function({})".format(losss_function_ast, ', '.join(variables_names))
 
     eval_locals = {}
     eval_locals.update(L_op)
-    for v in variables_names:
-        eval_locals.update({v: var(v)})
+    for v in L_varaibles:
+        eval_locals.update({v.name: var(v.name)}) # pylint: disable=E0602
 
     print("[*] sage_eval('{}', locals={})".format(eval_statement, eval_locals))
-    L = sage_eval(eval_statement, locals=eval_locals)
-    # print("[*] L = {}".format(L))
-    return L
+    loss_function = sage_eval(eval_statement, locals=eval_locals) # pylint: disable=E0602
+    return loss_function
 
 if __name__ == "__main__":
     res = encode_constraint_to_loss_function_ast(C.Eq(C.Value(1), C.Variable('a', 4, 0x1000, C.Register('r'))))

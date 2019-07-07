@@ -71,7 +71,7 @@ def NeuSolv(N, L, x0, xadapter):
         # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
 
         ### Check if updating x is stopped
-        if k > 1 and x[k + 1] == x[k]:
+        if k > 2 and x[k + 1] == x[k]:
             return None
 
         if L(*y[k]) < 3.0:

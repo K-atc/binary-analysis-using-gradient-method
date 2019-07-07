@@ -49,9 +49,12 @@ class BinOp(ast.BinOp, ConstraintIR):
     def get_variables(self):
         return self.left.get_variables() + self.right.get_variables()
 
-class VariableType:
+class VariableType(ast.Ast):
     def __init__(self):
         self.kind = self.__class__.__name__
+
+    def __repr__(self):
+        return "{}".format(self.kind)
 
 class Register(VariableType):
     def __init__(self, name):
@@ -80,6 +83,19 @@ class Memory(VariableType):
     
     def __repr__(self):
         return "{}(base={}, index={}, scale={}, disp={})".format(self.kind, self.base, self.index, self.scale, self.disp)
+
+class Function(VariableType):
+    def __init__(self, name, args):
+        self.name = name
+        self.args = args
+
+    def __repr__(self):
+        return "Function({}, {})".format(self.name, self.args)
+
+### NOTE: Variable but don't need to handle in tracer (Internal use)
+### Refactor: rename to VirtualVariable and use get_virtual_variable() ?
+class NullType(VariableType):
+    pass
 
 class Variable(ConstraintIR):
     ### TODO: object name where this variable locates
@@ -174,9 +190,15 @@ class Assign(BinOp):
     def get_variables(self):
         return VariableList()
 
-class FuncArg(object):
-    def __init__(self, call, name):
-        self.name = "{}_{}".format(call.name, name)
+class FuncArg(Variable):
+    # FIXME: value keyword is not used
+    def __init__(self, call, name, value=None):
+        assert value is None or isinstance(value, VariableList)
+        name = "{}_{}".format(call.name, name)
+        vtype = NullType()
+        super(FuncArg, self).__init__(name, call.size, call.addr, vtype, call.objfile)
+        self.kind = self.__class__.__name__
+        self.value = value
 
 class Call(Variable):
     def __init__(self, args, addr, objfile):
@@ -186,15 +208,15 @@ class Call(Variable):
         self.size = 0
         self.addr = addr
         self.args = args
-        self.vtype = Call
+        self.vtype = Function(self.__class__.__name__, args)
         self.objfile = objfile
 
     def __repr__(self):
         return "Call.{}({}, {:#x}, in {})".format(self.__class__.__name__, self.args, self.addr, self.objfile)
 
     def get_variables(self):
-        # return VariableList(filter(lambda _: _.is_variable(), self.args))
-        return VariableList([self])
+        return VariableList(filter(lambda _: _.is_variable(), self.args))
+        # return VariableList([self])
 
 class Strncmp(Call):
     def __init__(self, *args, **kwargs):
@@ -202,6 +224,9 @@ class Strncmp(Call):
         self.s1 = FuncArg(self, "s1")
         self.s2 = FuncArg(self, "s2")
         self.n = FuncArg(self, "n")
+
+    def get_variables(self):
+        return VariableList([self, self.s1, self.s2, self.n])
 
 if __name__ == "__main__":
     print("[*] get_variables()")
