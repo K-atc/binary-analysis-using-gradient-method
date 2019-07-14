@@ -2,20 +2,25 @@ import os, sys
 import struct
 import numbers
 from pprint import pformat
+import ctypes
+import numpy as np
 
 from engine import NeuSolv, stat
 from nao.util import strip_null, Tactic
 from nao.program import Program, X
-# from nao.ast import constraint as C
 
-tar_file = open('sample.tar').read()
+magic = False
+checksum = True
 
+with open('sample.tar') as f:
+    tar_file = f.read()
 
 def xadapter(v):
+    def round_real_to_uint(i):
+        return int(abs(round(i)))
+
     def round_real_to_char(i):
-        i = round(i)
-        if i < 0:
-            return '\x00'
+        i = round_real_to_uint(i)
         if i < (1 << 8):
             return struct.pack('<B', i)
         if i < (1 << 16):
@@ -26,18 +31,27 @@ def xadapter(v):
             return struct.pack('<Q', i)
 
     try:
-        assert len(v) == 8
-        s = ''.join(map(lambda _: round_real_to_char(_), v.list()))
-        print("s = {!r}".format(s))
-        assert len(s) >= 8
-        content = tar_file[:0x101] + s + tar_file[0x101 + len(s):] 
+        if magic:
+            assert len(v) == 8
+            s = ''.join(map(lambda _: round_real_to_char(_), v.list()))
+            assert len(s) >= 8
+            # content = tar_file[:0x101] + s + tar_file[0x101 + len(s):] # for magic
+        if checksum:
+            assert len(v) == 1
+            s = "{:06o}\0 ".format(round_real_to_uint(v[0]))
+            assert len(s) == 8
+            content = tar_file[:0x94] + s + tar_file[0x94 + len(s):] # for checksum
+        # print("\ts = {!r}".format(s))
+        
         ### FIXME: arg[0] should use fs.path('sample.tar')
-        return X(args=['./fs-Inspector/sample.tar'], files={'sample.tar': content}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
+        return X(args=['./fs-Inspector/test.tar'], files={'test.tar': content}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
     except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
+        print()
         print("-> v = {}".format(v))
+        import ipdb; ipdb.set_trace()
         exit(1)
 
 def vectorize(a):
@@ -46,15 +60,24 @@ def vectorize(a):
         res.append(ord(v))
     return vector(res)
 
+### REFACTER: No need to implement yadapter in solver
 def yadapter(constraint, y):
     try:
         variables = constraint.get_variables()
-        print("[*] y = {}".format(y))
+        # print("[*] y = {}".format(y))
         res = []
         for v in variables:
             try:
                 value = y[v.name]
                 if isinstance(value, numbers.Number): # Scalar
+                    if value < 0x100:
+                        value = ctypes.c_byte(value).value
+                    elif value < 0x10000:
+                        value = ctypes.c_int(value).value
+                    elif value < 0x100000000:
+                        value = ctypes.c_int(value).value                    
+                    else:
+                        value = ctypes.c_long(value).value
                     res.append(value)
                 elif len(value) == 1:
                     res.append(ord(value))
@@ -67,6 +90,7 @@ def yadapter(constraint, y):
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
+        print()
         print("-> value = {!r}".format(value))
         print("-> y = {}".format(y))
         import ipdb; ipdb.set_trace()
@@ -96,8 +120,12 @@ def main():
 
     ### Solve constraints
     ### TODO: auto set initial x 
-    # model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
-    model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+    if magic:
+        model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
+        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+    if checksum:
+        # model = NeuSolv(N, L, vector([0]), xadapter)
+        model = NeuSolv(N, L, vector([114514]), xadapter)
 
     print("=" * 8)
     if model is not None:
@@ -115,7 +143,10 @@ def main():
         print("[*] not found")
 
     print("-" * 8)
-    print("Lap Time: {}".format(stat.lap_time))
+    print("Measured epics time:")
+    print("\tmean   = {} sec".format(np.mean(stat.lap_time)))
+    print("\tmedian = {} sec".format(np.median(stat.lap_time)))
+    print("\tstd.   = {} sec".format(np.std(stat.lap_time)))
 
 if __name__ == "__main__":
     main()

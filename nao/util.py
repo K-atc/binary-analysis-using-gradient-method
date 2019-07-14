@@ -325,7 +325,7 @@ class Inspector:
             return list(node.block.capstone.insns)
         raise UnhandledCaseError("get_cfg_node_insns_at: provide rebased_addr or relative_addr")
 
-    def get_node_condition(self, node):
+    def get_node_condition(self, node, jumps_on_branch):
         def __collect_insns_ops(insn, object_file):
             v = []
             for i, op in enumerate(insn.operands): # pylint: disable=W0612
@@ -397,7 +397,7 @@ class Inspector:
                     res.append(ir.Eq(r_ret, call_f.ret))
             return res
 
-        def __jump_not_taken_constraint(insns, object_file):
+        def __jump_not_taken_constraint(insns, object_file, jumps_on_branch):
             if len(node.successors) < 2:
                 return ir.Top()
             else:
@@ -414,38 +414,47 @@ class Inspector:
                         left = v[0]
                         right = ir.Value(0)
 
+                ### Funtion slector
+                def MUX(f1, f2):
+                    return {True: f1, False: f2}[jumps_on_branch]
+
                 ### Conditional Branch
+                ### TODO: check if implemented correctlly
                 for insn in [jcc_insn]:
-                    if compare_insn.id in [capstone.x86.X86_INS_CMP, capstone.x86.X86_INS_MOV]:
-                        # NOTE: Returns constraint of jump *not* taken
+                    if compare_insn.id in [capstone.x86.X86_INS_CMP]:
+                        # NOTE: Returns constraint of jump taken or jump *not* taken
                         if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                            return ir.Eq(left, right)
+                            return MUX(ir.Ne, ir.Eq)(left, right)
                         if insn.id == capstone.x86.X86_INS_JE:  # jz
-                            return ir.Ne(left, right)
-                        if insn.id == capstone.x86.X86_INS_JA:  # left - right >= 0
-                            return ir.Lt(left, right)
-                        if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0 # readlly?
-                            return ir.Gt(left, right)
-                        if insn.id == capstone.x86.X86_INS_JBE:  # left - right <= 0
-                            return ir.Ge(left, right)
-                        if insn.id == capstone.x86.X86_INS_JLE:  # left - right <= 0
-                            return ir.Gt(left, right)
-                    elif compare_insn.id == capstone.x86.X86_INS_TEST:
+                            return MUX(ir.Eq, ir.Ne)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JA:  # left > right
+                            return MUX(ir.Gt, ir.Le)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JA:  # left >= right
+                            return MUX(ir.Ge, ir.Lt)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JB:  # left < right
+                            return MUX(ir.Le, ir.Gt)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JBE:  # left <= right
+                            return MUX(ir.Le, ir.Gt)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JL:  # left < right
+                            return MUX(ir.Lt, ir.Ge)(left, right)
+                        if insn.id == capstone.x86.X86_INS_JLE:  # left <= right
+                            return MUX(ir.Le, ir.Gt)(left, right)
+                    elif compare_insn.id in [capstone.x86.X86_INS_TEST]:
                         if left == right:
                             if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                                return ir.Eq(left, ir.Value(0))
+                                return MUX(ir.Ne, ir.Eq)(left, ir.Value(0))
                             if insn.id == capstone.x86.X86_INS_JE:  # jz
-                                return ir.Ne(left, ir.Value(0))
+                                return MUX(ir.Eq, ir.Ne)(left, ir.Value(0))
                         else:
                             if insn.id == capstone.x86.X86_INS_JNE: # jnz
-                                return ir.Eq(ir.Band(left, right), ir.Value(0))
+                                return MUX(ir.Ne, ir.Eq)(ir.Band(left, right), ir.Value(0))
                             if insn.id == capstone.x86.X86_INS_JE:  # jz
-                                return ir.Ne(ir.Band(left, right), ir.Value(0))
-                    else:
-                        raise UnhandledCaseError("get_node_condition: Unhandled instruction '{:#x}: {} {}'".format(compare_insn.address, compare_insn.mnemonic, compare_insn.op_str))
-                    raise UnhandledCaseError("get_node_condition: Unsupported instruction '{:#x}: {} {}'".format(insn.address, insn.mnemonic, insn.op_str))
+                                return MUX(ir.Eq, ir.Ne)(ir.Band(left, right), ir.Value(0))
+                    raise UnhandledCaseError("Unsupported instruction '{:#x}: {} {}'".format(insn.address, insn.mnemonic, insn.op_str))
 
         if self.debug: print("[*] get_node_condition: visited node {} (addr={:#x})".format(node, node.addr))
+
+        assert isinstance(jumps_on_branch, bool)
 
         object_file = self.find_object_containing(rebased_addr=node.addr)
         insns = self.get_cfg_node_insns_at(rebased_addr=node.addr)
@@ -454,7 +463,7 @@ class Inspector:
         # assign_constraint = __assign_constraint(insns, object_file)
         assign_constraint = ir.ConstraintList()
         call_constraint = __call_function(self, insns, object_file)
-        jump_not_taken_constraint = __jump_not_taken_constraint(insns, object_file)
+        jump_not_taken_constraint = __jump_not_taken_constraint(insns, object_file, jumps_on_branch=jumps_on_branch)
         return assign_constraint + call_constraint + [jump_not_taken_constraint]
 
     # @return list of constriant IR
@@ -528,6 +537,7 @@ class Inspector:
         else:
             raise ProcessNotFoundError("Tracee is not attached")
 
+### REFECTOR: tectic.py
 class Tactic:
     @staticmethod
     def near_path_constraint(inspector, node):
@@ -536,29 +546,43 @@ class Tactic:
         predecessors = []
         if node.predecessors:
             predecessors += node.predecessors
-        if node.predecessors:
-            prev_node = inspector.get_prev_node(node)
-            if prev_node:
-                predecessors.append(prev_node)
-                if prev_node.predecessors:
-                    predecessors += prev_node.predecessors
+
+            # If predecessor is called function node, add function call node as predecessor
             for pnode in node.predecessors:
-                prev = inspector.get_prev_node(pnode)
-                if prev:
-                    predecessors.append(prev)
-            # import ipdb; ipdb.set_trace()
+                print("[*] {} -> successors = {}".format(pnode, pnode.successors))
+                if pnode.addr == pnode.function_address: # If p is entory node of calld function,
+                    prev_node = inspector.get_prev_node(node)
+                    if prev_node:
+                        predecessors.append(prev_node) # add function call node as predecessor.
+                        if prev_node.predecessors:
+                            predecessors += prev_node.predecessors
+                    break
+        # import ipdb; ipdb.set_trace()
+
+        ### NOTE: Incerrect implementation for get_prev_node()
+        # for pnode in node.predecessors:
+        #     prev = inspector.get_prev_node(pnode)
+        #     if prev:
+        #         predecessors.append(prev)
 
         predecessors_conditions = ir.ConstraintList()
         predecessors = set(predecessors)
+        print("[*] Tactic.near_path_constraint: predecessors = {}".format(predecessors))
         for predecessor in predecessors:
             assert predecessor is not None
             if predecessor.is_simprocedure: # skip symbolic procedure (simprocedure is introduced by angr)
                 continue
-            predecessor_condition = inspector.get_node_condition(predecessor)
+            if len(predecessor.successors) == 2: # Conditional Branch
+                if predecessor.addr == node.addr: # takes no jump
+                    jumps_on_branch = False
+                else:
+                    jumps_on_branch = True
+            predecessor_condition = inspector.get_node_condition(predecessor, jumps_on_branch)
             if predecessor_condition != ir.Top():
                 predecessors_conditions += predecessor_condition
-        node_constraint = inspector.get_node_condition(node)            
-        return predecessors_conditions + node_constraint
+        # node_constraint = inspector.get_node_condition(node)     
+        # return predecessors_conditions + node_constraint
+        return predecessors_conditions
 
 def strip_null(s):
     first_null_pos = s.find('\x00')

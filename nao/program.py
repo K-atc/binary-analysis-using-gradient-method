@@ -1,11 +1,15 @@
 import subprocess
 import functools
+import time
+
+from ptrace.debugger.process_event import ProcessExit
 
 from .util import Inspector
 from .exceptions import * # pylint: disable=W0614
 from .ast import constraint as ir
 from .encoder import Encode, encode_constraint_to_loss_function_ast
 from .evaluate import evaluate_constraint_ast
+
 
 class X():
     def __init__(self, args=[], stdin='', files={}, env={}):
@@ -53,7 +57,20 @@ class Program:
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
         self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
+        try:
+            retry_flag = True
+            while retry_flag:
+                retry_flag = False
+                self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
+        except ProcessExit as e:
+            print("[!] Unexpected Exception: {}".format(e))
+            self.inspector.stop()
+            time.sleep(1.0)
+            print("[!] Retrying run()")
+            retry_flag = True
+
         res = self.inspector.collect(y_variables)
+        self.inspector.stop()
 
         # if self.debug: print("[*] Program.call() = {}".format(res))
         return res

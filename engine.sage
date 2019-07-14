@@ -1,20 +1,6 @@
 #!/usr/bin/sage
 #coding: utf8
-import time
-
-class Statistics:
-    lap_time = []
-    start_time = 0
-
-    def __init__(self):
-        pass
-
-    def lap_start(self):
-        self.start_time = time.time()
-    
-    def lap_end(self):
-        end_time = time.time()
-        self.lap_time.append(end_time - self.start_time)
+from nao.Statistics import Statistics
 
 stat = Statistics()
 
@@ -38,7 +24,7 @@ def NeuSolv(N, L, x0, xadapter):
     assert callable(N)
     assert callable(L)
 
-    epsilon = 0.5
+    epsilon = 0.2
     gamma = 0.9
 
     print("\n[*] === NeuSolv() ===")
@@ -76,9 +62,10 @@ def NeuSolv(N, L, x0, xadapter):
         if k > 2 and x[k + 1] == x[k]:
             return None
 
-        if L(*y[k]) < 3.0:
-            epsilon *= 0.95
-            gamma *= 0.95
+        # ### Slow down learning late in late epic
+        # if L(*y[k]) < 3.0:
+        #     epsilon *= 0.95
+        #     gamma *= 0.95
 
         stat.lap_end()
 
