@@ -5,6 +5,7 @@ from .util import Inspector
 from .exceptions import * # pylint: disable=W0614
 from .ast import constraint as ir
 from .encoder import Encode, encode_constraint_to_loss_function_ast
+from .evaluate import evaluate_constraint_ast
 
 class X():
     def __init__(self, args=[], stdin='', files={}, env={}):
@@ -47,18 +48,22 @@ class Program:
         return Encode(constraint)
 
     def call(self, y_variables, x):
-        if self.debug: print("[*] call(y=..., x={})".format(x))
+        if self.debug: print("[*] call(y_variables=..., x={})".format(x))
         assert isinstance(y_variables, ir.VariableList)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
         self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
         res = self.inspector.collect(y_variables)
-        if self.debug: print("[*] Program.call() = {}".format(res))
+
+        # if self.debug: print("[*] Program.call() = {}".format(res))
         return res
 
     def call_with_adapter(self, constraint, x):
         ### FIXME: Dirty implementation. non-efficient implementaiton
-        return self.yadapter(encode_constraint_to_loss_function_ast(constraint).get_variables(), self.call(constraint.get_variables(), self.xadapter(x)))
+        context = self.call(constraint.get_variables(), self.xadapter(x))
+        context = evaluate_constraint_ast(constraint, context)
+        loss_function_ast = encode_constraint_to_loss_function_ast(constraint)
+        return self.yadapter(loss_function_ast, context)
 
     def run(self, x):
         assert(isinstance(x, X))

@@ -10,6 +10,9 @@ class ConstraintIR(ast.Ast):
     def is_variable(self):
         return False
 
+    def evaluate(self, context):
+        return self
+
 class VariableList(list):
     def __add__(self, other):
         return VariableList(super(VariableList, self).__add__(other))
@@ -47,7 +50,7 @@ class UniOp(ast.UniOp, ConstraintIR):
 
 class BinOp(ast.BinOp, ConstraintIR):
     def get_variables(self):
-        return self.left.get_variables() + self.right.get_variables()
+        return VariableList(set(self.left.get_variables() + self.right.get_variables()))
 
 class VariableType(ast.Ast):
     def __init__(self):
@@ -86,11 +89,12 @@ class Memory(VariableType):
 
 class Function(VariableType):
     def __init__(self, name, args):
+        self.kind = self.__class__.__name__
         self.name = name
         self.args = args
 
     def __repr__(self):
-        return "Function({}, {})".format(self.name, self.args)
+        return "{}({}, {})".format(self.kind, self.name, self.args)
 
 ### NOTE: Variable but don't need to handle in tracer (Internal use)
 ### Refactor: rename to VirtualVariable and use get_virtual_variable() ?
@@ -106,7 +110,7 @@ class Variable(ConstraintIR):
         self.name = name
         self.size = size
         self.addr = addr
-        self.vtype = vtype
+        self.vtype = vtype # REFACTER: want to rename from vtype to value
         self.objfile = objfile
 
     def __eq__(self, other):
@@ -137,7 +141,10 @@ class Variable(ConstraintIR):
         return True
 
     def get_variables(self):
-        return VariableList([self])
+        if self.is_variable():
+            return VariableList([self])
+        else:
+            return VariableList()
 
 class Top(Term):
     def __init__(self):
@@ -187,36 +194,86 @@ class Ge(BinOp):
     pass
 
 class Assign(BinOp):
-    def get_variables(self):
-        return VariableList()
+    pass
 
-class FuncArg(Variable):
-    # FIXME: value keyword is not used
-    def __init__(self, call, name, value=None):
-        assert value is None or isinstance(value, VariableList)
-        name = "{}_{}".format(call.name, name)
-        vtype = NullType()
-        super(FuncArg, self).__init__(name, call.size, call.addr, vtype, call.objfile)
+class Void(Variable):
+    def __init__(self):
         self.kind = self.__class__.__name__
+
+    def __repr__(self):
+        return "{}()".format(self.kind)
+
+    def is_variable(self):
+        return False
+
+class Label(Variable):
+    def __init__(self, name):
+        self.kind = self.__class__.__name__
+        self.name = name
+
+    def __repr__(self):
+        return "{}({})".format(self.kind, self.name)
+
+    def is_variable(self):
+        return False
+
+
+### REFACOTER: Is this really required?
+class FuncArg(Variable):
+    def __init__(self, call, name, addr=None):
+        name = "{}_{}".format(call.name, name)
+        if addr is None:
+            addr = call.addr
+        super(FuncArg, self).__init__(name, call.size, call.addr, call.vtype, call.objfile)
+        self.kind = self.__class__.__name__
+
+    def is_variable(self):
+        return False
+
+class FuncCallRet(ConstraintIR):
+    def __init__(self, addr, value):
+        self.kind = self.__class__.__name__
+        self.addr = addr
         self.value = value
 
+    def __repr__(self):
+        return "{}({:#x}, {})".format(self.kind, self.addr, self.value)
+
 class Call(Variable):
-    def __init__(self, args, addr, objfile):
+    def __init__(self, ret, args, addr, objfile):
+        assert isinstance(ret, FuncCallRet)
         assert args is None or isinstance(args, list)
         self.kind = self.__class__.__name__
         self.name = "Call_{}_{:x}".format(self.__class__.__name__, addr)
         self.size = 0
         self.addr = addr
-        self.args = args
         self.vtype = Function(self.__class__.__name__, args)
         self.objfile = objfile
+        self.args = self.__args(args) # define after self.object definition
+        # self.ret = Variable("{}_return".format(self.name), 8, ret.addr, ret.value, objfile)
+        self.ret = Label("{}_return".format(self.name))
 
     def __repr__(self):
-        return "Call.{}({}, {:#x}, in {})".format(self.__class__.__name__, self.args, self.addr, self.objfile)
+        return "Call.{}({}, {}, {:#x}, in {})".format(self.kind, self.ret, self.args, self.addr, self.objfile)
+
+    def __args(self, args):
+        res = []
+        for i, v in enumerate(args):
+            if isinstance(v, Register):
+                res.append(Variable("{}_arg{}".format(self.name, i), 8, self.addr, v, self.objfile))
+            elif isinstance(v, Variable):
+                res.append(v)
+            else:
+                raise UnhandledCaseError("arg {} is not Register or Variable".format(v))
+        return res
 
     def get_variables(self):
-        return VariableList(filter(lambda _: _.is_variable(), self.args))
-        # return VariableList([self])
+        return VariableList([self])
+
+    ### FIXME: NOT USED
+    def evaluate(self, context):
+        ### NOTE: function retuns void should return Top() (denotes always true)
+        raise NotImplementedError("evaluate method for {} is not implemented.".format(self.__class__.__name__))
 
 class Strncmp(Call):
     def __init__(self, *args, **kwargs):
@@ -225,8 +282,6 @@ class Strncmp(Call):
         self.s2 = FuncArg(self, "s2")
         self.n = FuncArg(self, "n")
 
-    def get_variables(self):
-        return VariableList([self, self.s1, self.s2, self.n])
 
 if __name__ == "__main__":
     print("[*] get_variables()")

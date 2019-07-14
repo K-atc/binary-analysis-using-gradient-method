@@ -362,18 +362,39 @@ class Inspector:
             res = ir.ConstraintList()
             ### Call instruction
             for i, insn in enumerate(insns):
+                call_f = None
                 if insn.id in [capstone.x86.X86_INS_CALL]:
                     insn_relative_address = self.get_relative_addr(object_name=object_file, rebased_addr=insn.address)
                     func_addr = insn.operands[0].imm
                     func_name = inspector.proj.loader.find_plt_stub_name(func_addr)
+                    ### REFACTER ME
                     if func_name == 'strncmp':
-                        call_f = ir.Strncmp([], insn_relative_address, object_file)
                         reg_name = ['rdi', 'rsi', 'edx']
-                        args = []
+
+                        ### Build function args
+                        f_args = []
                         for i in range(3):
-                            args.append(ir.Variable("{}_arg{}".format(call_f.name, i), 8, func_addr, ir.Register(reg_name[i]), object_file))
-                        call_f.args = args
-                        res.append(call_f)
+                            f_args.append(ir.Register(reg_name[i]))
+
+                        ### Build real/virtual function return value
+                        next_insn_addr = insn_relative_address + insn.size
+                        next_insn = inspector.get_cfg_node_insns_at(rebased_addr=insn.address + insn.size)[0] # NOTE: angr (insns[i + 1]) returns `lea` (insn[i - 1])
+                        ret_op = next_insn.operands[1]
+                        if ret_op.type == capstone.x86.X86_OP_REG:
+                            func_ret_reg_name = next_insn.reg_name(ret_op.reg)
+                        elif ret_op.type == capstone.x86.X86_OP_MEM:
+                            func_ret_reg_name = next_insn.reg_name(ret_op.mem.base)
+                        else:
+                            raise UnhandledCaseError("ret_op.type = {}".format(ret_op.type))
+                        f_ret = ir.FuncCallRet(next_insn_addr, ir.Register(func_ret_reg_name))
+                        r_ret = ir.Variable(var(next_insn, ret_op), ret_op.size, next_insn_addr, ir.Register(func_ret_reg_name), object_file)
+
+                        call_f = ir.Strncmp(f_ret, f_args, insn_relative_address, object_file)
+                    else:
+                        raise UnhandledCaseError("Unhandled function call '{:#x}: call {}'".format(insn.address, func_name))
+                    
+                    res.append(ir.Assign(call_f.ret, call_f))
+                    res.append(ir.Eq(r_ret, call_f.ret))
             return res
 
         def __jump_not_taken_constraint(insns, object_file):
@@ -403,8 +424,10 @@ class Inspector:
                             return ir.Ne(left, right)
                         if insn.id == capstone.x86.X86_INS_JA:  # left - right >= 0
                             return ir.Lt(left, right)
-                        if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0
+                        if insn.id == capstone.x86.X86_INS_JB:  # left - right < 0 # readlly?
                             return ir.Gt(left, right)
+                        if insn.id == capstone.x86.X86_INS_JBE:  # left - right <= 0
+                            return ir.Ge(left, right)
                         if insn.id == capstone.x86.X86_INS_JLE:  # left - right <= 0
                             return ir.Gt(left, right)
                     elif compare_insn.id == capstone.x86.X86_INS_TEST:
@@ -485,24 +508,20 @@ class Inspector:
                         arg = [None] * len(var.args)
                         for i, v in enumerate(var.args):
                             value = self.read_var(v)
-                            res[v.name] = value
+                            if self.debug:
+                                res[v.name] = value
                             arg[i] = value
-                        res[var.name] = '###DO#NOT#USE###' # NOTE: DO NOT USE THIS VALUE
                         n = arg[2]
-                        s1 = self.read_mem(arg[0], arg[2])
-                        s2 = self.read_mem(arg[1], arg[2])
+                        s1 = self.read_mem(arg[0], n)
+                        s2 = self.read_mem(arg[1], n)
                         res[var.n.name] = n
                         res[var.s1.name] = s1
-                        res[var.s2.name] = s2
-                        ### FIXME: Dirty implementation
-                        for i in range(arg[2]):
-                            res["{}_{}".format(var.s1.name, i)] = s1[i]
-                            res["{}_{}".format(var.s2.name, i)] = s2[i]                    
+                        res[var.s2.name] = s2               
                     else:
                         import ipdb; ipdb.set_trace()
                         raise UnhandledCaseError("missing ir.Call case: {}".format(var))
                 elif isinstance(var, ir.FuncArg):
-                    pass # Do not need to read value. There process is done in processing `Call`
+                    pass # Do not need to read value. They are processed in `Call` case
                 else:
                     res[var.name] = self.read_var(var)
             return res
@@ -514,18 +533,25 @@ class Tactic:
     def near_path_constraint(inspector, node):
         # print("node = {}".format(node))
         # print("node.predecessors = {}".format(node.predecessors))
-        predecessors = node.predecessors
-        prev_node = inspector.get_prev_node(node)
-        if prev_node:
-            predecessors.append(prev_node)
-            predecessors += prev_node.predecessors
-        for pnode in node.predecessors:
-            predecessors.append(inspector.get_prev_node(pnode))
-        # import ipdb; ipdb.set_trace()
+        predecessors = []
+        if node.predecessors:
+            predecessors += node.predecessors
+        if node.predecessors:
+            prev_node = inspector.get_prev_node(node)
+            if prev_node:
+                predecessors.append(prev_node)
+                if prev_node.predecessors:
+                    predecessors += prev_node.predecessors
+            for pnode in node.predecessors:
+                prev = inspector.get_prev_node(pnode)
+                if prev:
+                    predecessors.append(prev)
+            # import ipdb; ipdb.set_trace()
 
         predecessors_conditions = ir.ConstraintList()
         predecessors = set(predecessors)
         for predecessor in predecessors:
+            assert predecessor is not None
             if predecessor.is_simprocedure: # skip symbolic procedure (simprocedure is introduced by angr)
                 continue
             predecessor_condition = inspector.get_node_condition(predecessor)

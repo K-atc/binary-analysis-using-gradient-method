@@ -21,6 +21,9 @@ class VariableList(list):
         raise UnhandledCaseError("VariableList.find(): provide `name` or `addr`")  
 
 class Term(ast.Term, LossFunctionIR):
+    def __repr__(self):
+        return "{}".format(self.kind) # symbolic constant
+
     def get_variables(self):
         return VariableList()
 
@@ -30,7 +33,7 @@ class UniOp(ast.UniOp, LossFunctionIR):
 
 class BinOp(ast.BinOp, LossFunctionIR):
     def get_variables(self):
-        return self.left.get_variables() + self.right.get_variables()
+        return VariableList(set(self.left.get_variables() + self.right.get_variables()))
 
 ### True
 class Top(Term):
@@ -75,40 +78,31 @@ class Value(UniOp):
 
 class Variable(UniOp):
     def __init__(self, name):
+        self.kind = self.__class__.__name__
         self.name = name
 
     def __repr__(self):
         return "{}".format(self.name)
+
+    def __eq__(self, other):
+        if isinstance(other, Variable):
+            return (self.name == other.name)
+        else:
+            return False
+
+    def __hash__(self):
+        return hash(self.__repr__())
 
     def get_variables(self):
         return VariableList([self])
 
 class Vector(Variable):
     def __init__(self, name):
-        # assert isinstance(value, VariableList)
+        self.kind = self.__class__.__name__
         self.name = name
-        # self.value = value
 
-class VEq(BinOp):
-    def __init__(self, left, right, n):
-        assert isinstance(left, Vector)
-        assert isinstance(right, Vector)
-        assert isinstance(n, numbers.Number)
-        self.left = left
-        self.right = right
-        self.n = n
-    
-    def __repr__(self):
-        return "{}{}({}, {})".format(self.__class__.__name__, self.n, 
-        # ', '.join(self.left),
-        # ', '.join(self.right),
-        ", ".join("{}_{}".format(self.left, i) for i in range(self.n)),
-        ", ".join("{}_{}".format(self.right, i) for i in range(self.n)),
-        )
 
-    def get_variables(self):
-        res = []
-        for v in [self.left, self.right]:
-            for i in range(self.n):
-                res.append(Variable("{}_{}".format(v.name, i)))
-        return VariableList(res)
+if __name__ == "__main__":
+    print("[*] get_variables")
+    v1 = Variable('v1')
+    assert(Eq(v1, v1).get_variables() == VariableList([v1]))

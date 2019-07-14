@@ -1,4 +1,5 @@
 /.vscode
+/.idea
 /.vagrant
 *.sage.py
 *.tar.gz
@@ -16,8 +17,9 @@ proj.loader.all_object
 pin-*
 
 /sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
-/sample.tar
+/*.tar
 /engine.py
 /fs-*/
 
 /bugs
+/sample2

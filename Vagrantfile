@@ -72,7 +72,6 @@ Vagrant.configure("2") do |config|
     apt install -y python-pip python3-pip gdb silversearcher-ag
     pip install -r \~vagrant/requirements.txt
     pip3 install -r \~vagrant/requirements.txt
-    echo 0 > /proc/sys/kernel/yama/ptrace_scope
 
     # Install sagemath
     echo "[*] Install sagemath"
@@ -81,9 +80,15 @@ Vagrant.configure("2") do |config|
     chown -R vagrant.vagrant /opt/SageMath
     tar xf \~vagrant/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2 -C /opt/
     sudo ln -f -s /opt/SageMath/sage /usr/local/bin/sage
-    echo "export SAGE_ROOT=/opt/SageMath/" >> \~/.bashrc
-    echo "alias sage=/opt/SageMath/sage" >> \~/.bashrc
+    echo "export SAGE_ROOT=/opt/SageMath/" >> \~vagrant/.bashrc
+    echo "alias sage=/opt/SageMath/sage" >> \~vagrant/.bashrc
     sage -c 'exit'
     sage -sh -c 'pip install -r ~vagrant/requirements.txt'
   SHELL
+
+  config.trigger.after :up do |trigger|
+    trigger.name = "Finished Message"
+    trigger.info = "Machine is up!"
+    trigger.run_remote = {inline: "echo 0 > /proc/sys/kernel/yama/ptrace_scope"}
+  end
 end

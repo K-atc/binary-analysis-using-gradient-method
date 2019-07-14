@@ -40,6 +40,8 @@ def NeuSolv(N, L, x0, xadapter):
 
     epsilon = 0.5
     gamma = 0.9
+
+    print("\n[*] === NeuSolv() ===")
     
     grad_L = L.gradient()
     print("L = {}".format(L))

@@ -12,7 +12,7 @@ class Term(Ast):
             return False
 
     def __repr__(self):
-        return "{}".format(self.kind)
+        return "{}()".format(self.kind)
 
 class UniOp(Ast):
     def __init__(self, value):

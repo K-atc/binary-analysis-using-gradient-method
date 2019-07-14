@@ -1,25 +1,38 @@
 import os, sys
 import struct
 import numbers
+from pprint import pformat
 
 from engine import NeuSolv, stat
 from nao.util import strip_null, Tactic
 from nao.program import Program, X
 # from nao.ast import constraint as C
 
+tar_file = open('sample.tar').read()
+
+
 def xadapter(v):
     def round_real_to_char(i):
+        i = round(i)
         if i < 0:
             return '\x00'
-        else:
-            i = round(i)
-            return strip_null(struct.pack('<Q', i))
+        if i < (1 << 8):
+            return struct.pack('<B', i)
+        if i < (1 << 16):
+            return struct.pack('<H', i)
+        if i < (1 << 32):
+            return struct.pack('<I', i)
+        if i < (1 << 64):
+            return struct.pack('<Q', i)
 
     try:
+        assert len(v) == 8
         s = ''.join(map(lambda _: round_real_to_char(_), v.list()))
-        s = strip_null(s)
-        ### FIXME: arg[0] use fs.path('sample.tar')
-        return X(args=['./fs-Inspector/sample.tar'], files={'sample.tar': open('sample.tar').read()}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
+        print("s = {!r}".format(s))
+        assert len(s) >= 8
+        content = tar_file[:0x101] + s + tar_file[0x101 + len(s):] 
+        ### FIXME: arg[0] should use fs.path('sample.tar')
+        return X(args=['./fs-Inspector/sample.tar'], files={'sample.tar': content}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
     except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
@@ -33,8 +46,9 @@ def vectorize(a):
         res.append(ord(v))
     return vector(res)
 
-def yadapter(variables, y):
+def yadapter(constraint, y):
     try:
+        variables = constraint.get_variables()
         print("[*] y = {}".format(y))
         res = []
         for v in variables:
@@ -44,11 +58,6 @@ def yadapter(variables, y):
                     res.append(value)
                 elif len(value) == 1:
                     res.append(ord(value))
-                else: # Vector
-                    if value == "###DO#NOT#USE###": # FIXME: Dirty
-                        continue
-                    # res.append(vectorize(value))
-                    continue
             except KeyError:
                 ### FIXME: this is not internal variable value. Program does not reached the block.
                 if True: print("[!] yadapter(): Value of {} not found: {}".format(v.name, v))
@@ -64,14 +73,20 @@ def yadapter(variables, y):
         exit(1)
 
 def main():
+    ### Export Environment Variable
+    os.environ['LD_LIBRARY_PATH'] = '/vagrant/sample/'
+
     ### Load analysis target
-    p = Program("./sample/file", xadapter, yadapter, debug=True)
+    p = Program("./sample/file", xadapter, yadapter, debug=False)
 
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'
-    find_addr = 0x173F8 # return 3 at is_tar
+    # find_addr = 0x17279 # if ((ms->flags & (MAGIC_APPLE|MAGIC_EXTENSION)) != 0) -> else
+    # find_addr = 0x0173F8 # return 3 at is_tar
+    find_addr = 0x173D6 # reach strcmp(s1, "ustar  \x00")
     constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
-    print("constraints = {}".format(constraints))
+    print("[*] constraints = {}".format(pformat(constraints)))
+    print("[*] variables = {}".format(pformat(constraints.get_variables())))
 
     ### Define function N
     N = p.N(constraints)
@@ -81,7 +96,8 @@ def main():
 
     ### Solve constraints
     ### TODO: auto set initial x 
-    model = NeuSolv(N, L, zero_vector(18), xadapter)
+    # model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
+    model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
 
     print("=" * 8)
     if model is not None:
