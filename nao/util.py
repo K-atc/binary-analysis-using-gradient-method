@@ -157,8 +157,8 @@ class Inspector:
             self.fs.create(file_path, data=file_content)
 
         ### create stdin
-        ### TODO: Hook open & read syscall
-        f_stdin = self.fs.create('.stdin', data=stdin)
+        self.fs.create('.stdin', data=stdin)
+        f_stdin = self.fs.open('.stdin')
 
         ### ptrace setup
         if self.debug:
@@ -247,20 +247,29 @@ class Inspector:
             return False
 
     def stop(self):
-        if hasattr(self, "process") and  self.is_tracee_attached():
+        if self.is_tracee_attached():
             if self.debug: print("[*] Detaching process (pid={})".format(self.pid))
             self.process.detach()
             self.debugger.quit()
+            del self.process
+            del self.debugger
             self.pid = -1
             self.mmap = None
-        if not self.debug:
+        if hasattr(self, "tracee"):
+            if self.tracee.stdout:
+                self.tracee.stdout.close()
+            if self.tracee.stderr:
+                self.tracee.stderr.close()
             try:
-                self.tracee.kill()
+                self.tracee.terminate()
             except:
                 pass
 
     def is_tracee_attached(self):
-        return self.process.is_attached
+        if hasattr(self, "process"):
+            return self.process.is_attached
+        else:
+            return False
 
     def find_symbol(self, symbol_name):
         symbol = self.proj.loader.find_symbol(symbol_name)

@@ -35,10 +35,11 @@ def xadapter(v):
             assert len(v) == 8
             s = ''.join(map(lambda _: round_real_to_char(_), v.list()))
             assert len(s) >= 8
-            # content = tar_file[:0x101] + s + tar_file[0x101 + len(s):] # for magic
+            content = tar_file[:0x101] + s + tar_file[0x101 + len(s):] # for magic
         if checksum:
             assert len(v) == 1
             s = "{:06o}\0 ".format(round_real_to_uint(v[0]))
+            # s = ''.join(map(lambda _: '01234567'[round_real_to_uint(_) % 8], v.list()))
             assert len(s) == 8
             content = tar_file[:0x94] + s + tar_file[0x94 + len(s):] # for checksum
         # print("\ts = {!r}".format(s))
@@ -70,13 +71,9 @@ def yadapter(constraint, y):
             try:
                 value = y[v.name]
                 if isinstance(value, numbers.Number): # Scalar
-                    if value < 0x100:
-                        value = ctypes.c_byte(value).value
-                    elif value < 0x10000:
-                        value = ctypes.c_int(value).value
-                    elif value < 0x100000000:
+                    if value < 0x100000000: # 32bit int
                         value = ctypes.c_int(value).value                    
-                    else:
+                    else: # 64bit int
                         value = ctypes.c_long(value).value
                     res.append(value)
                 elif len(value) == 1:
@@ -124,8 +121,8 @@ def main():
         model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
         # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
     if checksum:
-        # model = NeuSolv(N, L, vector([0]), xadapter)
-        model = NeuSolv(N, L, vector([114514]), xadapter)
+        model = NeuSolv(N, L, vector([1221]), xadapter)
+        # model = NeuSolv(N, L, zero_vector(8), xadapter)
 
     print("=" * 8)
     if model is not None:

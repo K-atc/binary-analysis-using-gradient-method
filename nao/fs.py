@@ -16,7 +16,10 @@ class FileSystem:
 
     def __del__(self):
         # self.clean()
-        pass
+
+        ### Close open files
+        for path in self.handle.keys():
+            self.close(path)
     
     def create(self, path, data):
         assert(isinstance(data, bytes))
@@ -25,7 +28,7 @@ class FileSystem:
             os.mkdir(path_dir)
         with open(self.base_dir + path, "wb") as f:
             f.write(data)
-        return self.open(path)
+        return None
     
     def remove(self, path):
         if path in self.handle:
@@ -54,11 +57,14 @@ class FileSystem:
             raise FileSystemException("fs.attach: path '{}' is not opened".format(path))
 
     def close(self, path):
-        return close(self.base_dir + path)
+        f = self.handle[path]
+        del self.handle[path]
+        return f.close()
 
 if __name__ == "__main__":
     fs = FileSystem('fs-test')
-    f = fs.create('hello', b'google')
+    fs.create('hello', b'google')
+    f = fs.open('hello')
     print(fs.base_dir + 'hello')
     assert(os.path.exists(fs.base_dir + 'hello') == True)
     data = f.read()
@@ -70,7 +76,8 @@ if __name__ == "__main__":
     print(fs.handle)
 
     import subprocess
-    f = fs.create('hello2', b'google!!')
+    fs.create('hello2', b'google!!')
+    f = fs.open('hello2')
     p = subprocess.Popen(['/bin/cat'], stdin=f, stdout=subprocess.PIPE)
     stdout, _ = p.communicate()
     print(stdout)
