@@ -38,9 +38,11 @@ def e(c):
         return L.Variable(c.name)
     if isinstance(c, C.Assign): # Dismiss
         return L.Top()
+    if isinstance(c, C.Assume): # Dismiss
+        return L.Top()
     if isinstance(c, C.Top):
         return L.Top()
-    raise UnhandledCaseError("encode: c={}".format(c))
+    raise UnhandledCaseError("Not handled: c={}".format(c))
 
 def encode_constraint_to_loss_function_ast(constraint):
     if isinstance(constraint, list):
@@ -54,7 +56,7 @@ def encode_constraint_to_loss_function_ast(constraint):
 
 def Encode(constraints):
     loss_function_ast = encode_constraint_to_loss_function_ast(constraints)
-    # print("[*] Encode(): loss_function_ast = {}".format(loss_function_ast))
+    print("[*] Encode(): loss_function_ast = {}".format(loss_function_ast))
     L_varaibles = loss_function_ast.get_variables()
     variables_names = map(lambda _: _.name, L_varaibles)
     # print("[*] Encode(): variables_names = {}".format(variables_names))

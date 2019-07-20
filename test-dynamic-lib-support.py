@@ -1,6 +1,6 @@
 #!/usr/bin/python
-from nao.util import Inspector, Tactic
-import signal
+from nao.util import Tactic
+from nao.inspector import Inspector
 
 def test_file():
     print("\n[*] === file ===")
@@ -12,12 +12,9 @@ def test_file():
 
     cond = inspector.get_condition_at(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
     print("post condition = {}".format(cond))
-    y_variables = cond.get_variables()
-    print("y_variables = {} (type={})".format(y_variables, type(y_variables)))
 
     inspector.run(args=["/vagrant/sample.tar"], env={'LD_LIBRARY_PATH': '/vagrant/sample/'})
-
-    return inspector.collect(y_variables)
+    return inspector.collect(cond)
 
 if __name__ == "__main__":
     res = test_file()

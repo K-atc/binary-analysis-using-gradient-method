@@ -4,7 +4,7 @@ import time
 
 from ptrace.debugger.process_event import ProcessExit
 
-from .util import Inspector
+from .inspector import Inspector
 from .exceptions import * # pylint: disable=W0614
 from .ast import constraint as ir
 from .encoder import Encode, encode_constraint_to_loss_function_ast
@@ -51,9 +51,9 @@ class Program:
         assert isinstance(constraint, ir.ConstraintIR)
         return Encode(constraint)
 
-    def call(self, y_variables, x):
-        if self.debug: print("[*] call(y_variables=..., x={})".format(x))
-        assert isinstance(y_variables, ir.VariableList)
+    def call(self, y_constraints, x):
+        if self.debug: print("[*] call(y_constraints=..., x={})".format(x))
+        assert isinstance(y_constraints, ir.ConstraintList)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
         self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
@@ -69,7 +69,7 @@ class Program:
             print("[!] Retrying run()")
             retry_flag = True
 
-        res = self.inspector.collect(y_variables)
+        res = self.inspector.collect(y_constraints)
         self.inspector.stop()
 
         # if self.debug: print("[*] Program.call() = {}".format(res))
@@ -77,7 +77,7 @@ class Program:
 
     def call_with_adapter(self, constraint, x):
         ### FIXME: Dirty implementation. non-efficient implementaiton
-        context = self.call(constraint.get_variables(), self.xadapter(x))
+        context = self.call(constraint, self.xadapter(x))
         context = evaluate_constraint_ast(constraint, context)
         loss_function_ast = encode_constraint_to_loss_function_ast(constraint)
         return self.yadapter(loss_function_ast, context)

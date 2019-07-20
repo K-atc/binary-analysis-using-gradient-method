@@ -54,7 +54,13 @@ def NeuSolv(N, L, x0, xadapter):
             return x[k]
 
         ### Update x
-        grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
+        try:
+            grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
+        except Exception as e:
+            # print("grad_L(*y[k]) = {}".format(grad_L(*y[k])))
+            # print("D_x_f(N, x[k]) = {}".format(D_x_f(N, x[k])))
+            raise e
+
         x[k + 1] = x[k] + gamma * (x[k] - x[k - 1]) - epsilon * grad_L_N_x # Momentum
         # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
 

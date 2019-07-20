@@ -10,8 +10,11 @@ class ConstraintIR(ast.Ast):
     def is_variable(self):
         return False
 
-    def evaluate(self, context):
-        return self
+    def get_variables(self):
+        return VariableList()
+
+    def get_assume_nodes(self):
+        return ConstraintList()    
 
 class VariableList(list):
     def __add__(self, other):
@@ -37,9 +40,14 @@ class ConstraintList(list, ConstraintIR):
             res += const.get_variables()
         return VariableList(sorted(set(res)))
 
+    def get_assume_nodes(self):
+        res = []
+        for const in self:
+            res += const.get_assume_nodes()
+        return VariableList(sorted(set(res)))
+
 class Term(ast.Term, ConstraintIR):
-    def get_variables(self):
-        return VariableList()
+    pass
 
 class UniOp(ast.UniOp, ConstraintIR):
     def get_variables(self):
@@ -51,6 +59,9 @@ class UniOp(ast.UniOp, ConstraintIR):
 class BinOp(ast.BinOp, ConstraintIR):
     def get_variables(self):
         return VariableList(set(self.left.get_variables() + self.right.get_variables()))
+
+    def get_assume_nodes(self):
+        return VariableList(set(self.left.get_assume_nodes() + self.right.get_assume_nodes()))
 
 class VariableType(ast.Ast):
     def __init__(self):
@@ -161,6 +172,10 @@ class Value(UniOp):
 class Not(UniOp):
     pass
 
+class Assume(UniOp):
+    def get_assume_nodes(self):
+        return ConstraintList([self])
+
 ### Logical AND (∧)
 class Land(BinOp):
     pass
@@ -270,11 +285,6 @@ class Call(Variable):
     def get_variables(self):
         return VariableList([self])
 
-    ### FIXME: NOT USED
-    def evaluate(self, context):
-        ### NOTE: function retuns void should return Top() (denotes always true)
-        raise NotImplementedError("evaluate method for {} is not implemented.".format(self.__class__.__name__))
-
 class Strncmp(Call):
     def __init__(self, *args, **kwargs):
         super(Strncmp, self).__init__(*args, **kwargs)
@@ -302,3 +312,8 @@ if __name__ == "__main__":
     res = ConstraintList([Top(), Eq(var_b_4_2, var_a_4_1), var_a_8_1]).get_variables()
     assert(isinstance(res, VariableList))
     assert(res == [var_a_4_1, var_a_8_1, var_b_4_2])
+
+    print("[*] Assume node")
+    res = ConstraintList([Land(Assume(Value(1)), Top()), Assume(Value(2))]).get_assume_nodes()
+    print(res)
+    assert(res == [Assume(Value(1)), Assume(Value(2))])

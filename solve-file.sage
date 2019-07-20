@@ -8,9 +8,12 @@ import numpy as np
 from engine import NeuSolv, stat
 from nao.util import strip_null, Tactic
 from nao.program import Program, X
+from nao.ast import constraint as ir
+from nao.exceptions import UnhandledCaseError
 
-magic = False
-checksum = True
+magic, checksum = False, False
+magic = True
+# checksum = True
 
 with open('sample.tar') as f:
     tar_file = f.read()
@@ -42,7 +45,7 @@ def xadapter(v):
             # s = ''.join(map(lambda _: '01234567'[round_real_to_uint(_) % 8], v.list()))
             assert len(s) == 8
             content = tar_file[:0x94] + s + tar_file[0x94 + len(s):] # for checksum
-        # print("\ts = {!r}".format(s))
+        print("\ts = {!r}".format(s))
         
         ### FIXME: arg[0] should use fs.path('sample.tar')
         return X(args=['./fs-Inspector/test.tar'], files={'test.tar': content}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
@@ -65,7 +68,6 @@ def vectorize(a):
 def yadapter(constraint, y):
     try:
         variables = constraint.get_variables()
-        # print("[*] y = {}".format(y))
         res = []
         for v in variables:
             try:
@@ -76,20 +78,25 @@ def yadapter(constraint, y):
                     else: # 64bit int
                         value = ctypes.c_long(value).value
                     res.append(value)
-                elif len(value) == 1:
+                elif len(value) == 1: # array-like object
                     res.append(ord(value))
+                else: # sage.symbolic.expression.Expression ?
+                    res.append(value)
+                    # raise UnhandledCaseError("v={}".format(v))
             except KeyError:
-                ### FIXME: this is not internal variable value. Program does not reached the block.
+                ### NOTE: Program does not reached the block.
                 if True: print("[!] yadapter(): Value of {} not found: {}".format(v.name, v))
                 exit(1)
+        assert len(res) == len(variables)
         return res
     except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
         traceback.print_exc()
-        print()
+        print("")
         print("-> value = {!r}".format(value))
         print("-> y = {}".format(y))
+        print("-> variables = {}".format(variables))
         import ipdb; ipdb.set_trace()
         exit(1)
 
@@ -102,10 +109,16 @@ def main():
 
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'
+    addr_call_is_tar = 0x173D6
     # find_addr = 0x17279 # if ((ms->flags & (MAGIC_APPLE|MAGIC_EXTENSION)) != 0) -> else
-    # find_addr = 0x0173F8 # return 3 at is_tar
-    find_addr = 0x173D6 # reach strcmp(s1, "ustar  \x00")
+    if checksum:
+        find_addr = 0x173D6 # reach strcmp(s1, "ustar  \x00")
+    if magic:
+        find_addr = 0x173F8 # return 3 at is_tar
+    call_is_tar_constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=addr_call_is_tar)[0]
+    assume_checksum = ir.ConstraintList([ir.Assume(call_is_tar_constraints)])
     constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
+    constraints += assume_checksum
     print("[*] constraints = {}".format(pformat(constraints)))
     print("[*] variables = {}".format(pformat(constraints.get_variables())))
 
@@ -118,8 +131,8 @@ def main():
     ### Solve constraints
     ### TODO: auto set initial x 
     if magic:
-        model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
-        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
+        model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
     if checksum:
         model = NeuSolv(N, L, vector([1221]), xadapter)
         # model = NeuSolv(N, L, zero_vector(8), xadapter)
@@ -140,10 +153,11 @@ def main():
         print("[*] not found")
 
     print("-" * 8)
-    print("Measured epics time:")
-    print("\tmean   = {} sec".format(np.mean(stat.lap_time)))
-    print("\tmedian = {} sec".format(np.median(stat.lap_time)))
-    print("\tstd.   = {} sec".format(np.std(stat.lap_time)))
+    if stat.lap_time:
+        print("Measured epics time:")
+        print("\tmean   = {} sec".format(np.mean(stat.lap_time)))
+        print("\tmedian = {} sec".format(np.median(stat.lap_time)))
+        print("\tstd.   = {} sec".format(np.std(stat.lap_time)))
 
 if __name__ == "__main__":
     main()

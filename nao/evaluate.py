@@ -11,7 +11,7 @@ def e(c, context):
     if isinstance(c, C.Call):
         if isinstance(c, C.Strncmp):
             if c.s1.name in context and c.s2.name in context:
-                context[c.ret.name] = (to_vector(context[c.s1.name]) - to_vector(context[c.s2.name])).norm()
+                context[c.ret.name] = (to_vector(context[c.s1.name]) - to_vector(context[c.s2.name])).norm(1)
         else:
             raise UnhandledCaseError("Missing case for Call: {}".format(c))
     elif isinstance(c, C.UniOp):

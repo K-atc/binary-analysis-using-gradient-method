@@ -16,6 +16,7 @@ class Term(Ast):
 
 class UniOp(Ast):
     def __init__(self, value):
+        assert not isinstance(value, list)
         self.kind = self.__class__.__name__
         self.value = value
 
@@ -30,6 +31,8 @@ class UniOp(Ast):
 
 class BinOp(Ast):
     def __init__(self, left, right):
+        assert not isinstance(left, list)
+        assert not isinstance(right, list)
         self.kind = self.__class__.__name__
         self.left = left
         self.right = right
