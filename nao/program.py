@@ -21,7 +21,7 @@ class X():
         self.env = env
 
     def __repr__(self):
-        return "{}(args={!r}, stdin={!r}, files=paths:{!r}, env={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files.keys(), self.env)
+        return "{}(args={!r}, stdin={!r}, files={!r}, env={!r})".format(self.__class__.__name__, self.args, self.stdin, self.files, self.env)
 
 class Program:
     # @param xadapter encodes vector to vales of x variables (program inputs)

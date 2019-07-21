@@ -115,11 +115,17 @@ class Inspector:
         self.args = args
         self.stdin = stdin
         self.breakpoints = []
-        self.fs = FileSystem('./fs-{}/'.format(self.__class__.__name__))
+        if isinstance(files, FileSystem):
+            self.fs = files
+        else:
+            self.fs = FileSystem('./fs-{}/'.format(self.__class__.__name__)) # To be deprecated
         self.env = env
 
-        for file_path, file_content in files.items():
-            self.fs.create(file_path, data=file_content)
+        ### Setup file system
+        ### REFACTOR: Discontinue dict type
+        if isinstance(files, dict):
+            for file_path, file_content in files.items():
+                self.fs.create(file_path, data=file_content)
 
         ### create stdin
         self.fs.create('.stdin', data=stdin)
@@ -173,7 +179,7 @@ class Inspector:
 
         ### Set breakpoint for read_ver
         for v in set(y_variables):
-            breakpoint_manager.set_breakpoint(v, __read_var_hook)
+            breakpoint_manager.set_breakpoint(__read_var_hook, variable=v)
 
         ### Set breakpoint for Assume node
         for node in y_constraints.get_assume_nodes():
@@ -192,8 +198,10 @@ class Inspector:
             else:
                 raise UnexpectedException("Expected left or right hand of Assume node has Variable node: {}".format(node.value))
 
-            v.addr = 0x173CD # FIXME: addr of jz
-            breakpoint_manager.set_breakpoint(v, hook)
+            object_name = v.objfile
+            rebased_addr = inspector.get_cfg_node_at(object_name=object_name, relative_addr=v.addr).instruction_addrs[-1] # NOTE: conditional jump insn rebased address
+            relative_addr = inspector.get_relative_addr(object_name=object_name, rebased_addr=rebased_addr)
+            breakpoint_manager.set_breakpoint(hook, object_name=object_name, relative_addr=relative_addr)
 
         y = {}
         while True:
@@ -313,7 +321,12 @@ class Inspector:
         if relative_addr:
             if self.debug: print("[*] get_cfg_node_at(object_name={}, relative_addr={:#x})".format(object_name, relative_addr))
             if object_name:
-                addr = self.proj.loader.shared_objects[object_name].min_addr + relative_addr
+                try:
+                    object_name = os.path.basename(object_name)
+                    addr = self.proj.loader.shared_objects[object_name].min_addr + relative_addr
+                except KeyError as e:
+                    print("self.proj.loader.shared_objects = {}".format(self.proj.loader.shared_objects))
+                    raise e
             else:
                 addr = self.proj.loader.main_object.min_addr + relative_addr
         if rebased_addr:

@@ -4,16 +4,22 @@ import numbers
 from pprint import pformat
 import ctypes
 import numpy as np
+import argparse
 
 from engine import NeuSolv, stat
+from nao.fs import FileSystem
 from nao.util import strip_null, Tactic
 from nao.program import Program, X
 from nao.ast import constraint as ir
 from nao.exceptions import UnhandledCaseError
 
-magic, checksum = False, False
-magic = True
-# checksum = True
+parser = argparse.ArgumentParser()
+parser.add_argument('--magic', dest='magic', action='store_true')
+parser.add_argument('--checksum', dest='checksum', action='store_true')
+
+args = parser.parse_args()
+magic, checksum = args.magic, args.checksum
+assert magic or checksum
 
 with open('sample.tar') as f:
     tar_file = f.read()
@@ -45,10 +51,14 @@ def xadapter(v):
             # s = ''.join(map(lambda _: '01234567'[round_real_to_uint(_) % 8], v.list()))
             assert len(s) == 8
             content = tar_file[:0x94] + s + tar_file[0x94 + len(s):] # for checksum
-        print("\ts = {!r}".format(s))
         
+        if magic:
+            print("\ts = {!r}".format(s))
+
         ### FIXME: arg[0] should use fs.path('sample.tar')
-        return X(args=['./fs-Inspector/test.tar'], files={'test.tar': content}, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
+        fs = FileSystem('./fs-file/')
+        fs.create('test.tar', content)
+        return X(args=[fs.path('test.tar')], files=fs, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
     except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
@@ -62,7 +72,7 @@ def vectorize(a):
     res = []
     for v in list(a):
         res.append(ord(v))
-    return vector(res)
+    return vector(res) # pylint: disable=E0602
 
 ### REFACTER: No need to implement yadapter in solver
 def yadapter(constraint, y):
@@ -110,9 +120,8 @@ def main():
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'
     addr_call_is_tar = 0x173D6
-    # find_addr = 0x17279 # if ((ms->flags & (MAGIC_APPLE|MAGIC_EXTENSION)) != 0) -> else
     if checksum:
-        find_addr = 0x173D6 # reach strcmp(s1, "ustar  \x00")
+        find_addr = 0x173D6 # strcmp(s1, "ustar  \x00")
     if magic:
         find_addr = 0x173F8 # return 3 at is_tar
     call_is_tar_constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=addr_call_is_tar)[0]
@@ -132,9 +141,10 @@ def main():
     ### TODO: auto set initial x 
     if magic:
         # model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
-        model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+        model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**\x00"]), xadapter)
+        # model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
     if checksum:
-        model = NeuSolv(N, L, vector([1221]), xadapter)
+        model = NeuSolv(N, L, vector([1000]), xadapter)
         # model = NeuSolv(N, L, zero_vector(8), xadapter)
 
     print("=" * 8)
@@ -158,6 +168,8 @@ def main():
         print("\tmean   = {} sec".format(np.mean(stat.lap_time)))
         print("\tmedian = {} sec".format(np.median(stat.lap_time)))
         print("\tstd.   = {} sec".format(np.std(stat.lap_time)))
+
+    print("-" * 8 + "\n")
 
 if __name__ == "__main__":
     main()

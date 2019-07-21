@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-if [ $# -ne 1 ]; then
+if [ $# -eq 0 ]; then
     echo "usage: $0 SOLVER_SAGE_FILE"
     exit
 fi
@@ -13,5 +13,7 @@ cd - > /dev/null
 
 rm -f *.sage.py
 
+rm -rf /fs-Inspector/*
+
 sage -preparse engine.sage && mv engine.sage.py engine.py
-sage $SOLVER_SAGE_FILE
+/usr/bin/time -v sage $@

@@ -1,31 +1,51 @@
 #!/usr/bin/sage
 #coding: utf8
 from nao.Statistics import Statistics
+# from joblib import Parallel, delayed
 
 stat = Statistics()
 
 def D_x_f(f, x):
-    n = len(x)
-    m = len(f(x))
-    res = []
-    # NOTE: Calcuate transpose of $D_x f$
-    for i in range(n):
-        row = []
+    @parallel(2)
+    def __row(i):
         dxi = zero_vector(n)
         dxi[i] = 1
         f_x_plus_dxi = f(x + dxi)
         f_x = f(x)
+        row = []
         for j in range(m):
             row.append((f_x_plus_dxi[j] - f_x[j]) / dxi.norm())
-        res.append(row)
+        return row
+
+    n = len(x)
+    m = len(f(x))
+
+    # NOTE: Calcuate transpose of $D_x f$
+    res = []
+    for (_, x) in sorted(list(__row(range(n)))):
+        assert x is not 'NO DATA', 'Exception occured in this thread'
+        res.append(x)
+
+    # NOTE: Calcuate transpose of $D_x f$
+    # res = []
+    # for i in range(n):
+    #     dxi = zero_vector(n) # pylint: disable=E0602
+    #     dxi[i] = 1
+    #     f_x_plus_dxi = f(x + dxi)
+    #     f_x = f(x)
+    #     row = []
+    #     for j in range(m):
+    #         row.append((f_x_plus_dxi[j] - f_x[j]) / dxi.norm())
+    #     res.append(row)
+
     return matrix(res).transpose()
 
 def NeuSolv(N, L, x0, xadapter):
     assert callable(N)
     assert callable(L)
 
-    epsilon = 0.2
-    gamma = 0.9
+    epsilon = 0.1 # Learning Late
+    gamma = 0.9 # momentum
 
     print("\n[*] === NeuSolv() ===")
     
@@ -33,7 +53,7 @@ def NeuSolv(N, L, x0, xadapter):
     print("L = {}".format(L))
     print("∇L = {}".format(grad_L))
 
-    max_trial = 1000
+    max_trial = 2000
     x, y = [None for x in range(max_trial + 1)], [None for x in range(max_trial + 1)]
 
     x[0] = x0
@@ -64,9 +84,9 @@ def NeuSolv(N, L, x0, xadapter):
         x[k + 1] = x[k] + gamma * (x[k] - x[k - 1]) - epsilon * grad_L_N_x # Momentum
         # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
 
-        ### Check if updating x is stopped
-        if k > 2 and x[k + 1] == x[k]:
-            return None
+        # ### Check if updating x is stopped
+        # if k > 2 and x[k + 1] == x[k]:
+        #     return None
 
         # ### Slow down learning late in late epic
         # if L(*y[k]) < 3.0:
