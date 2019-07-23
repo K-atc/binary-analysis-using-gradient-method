@@ -5,6 +5,10 @@
 ./solve.sh SOLVER_SAGE_FILE
 ```
 
+TODO：
+* プロビジョン
+* fileのインストール
+
 ```shell
 ### test inspector
 python3 test-inspector.py
@@ -54,4 +58,10 @@ Eq(a, b) = abs(a - b + alpha)
 Ne(a, b) = max(-1, -1 * abs(a - b + beta))
 Land(L_S1, L_S2) = L_S1 + L_S2
 Lor(L_S1, L_S2) = min(L_S1, L_S2)
+```
+
+To watch open files:
+
+```shell
+watch -n1 'lsof -p `pgrep -f "python2 solve-file.sage.py" | tail -n1`'
 ```

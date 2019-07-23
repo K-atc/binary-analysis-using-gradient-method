@@ -11,6 +11,7 @@ from ptrace.debugger.process_event import ProcessEvent, NewProcessEvent, Process
 from ptrace.debugger.process_error import ProcessError
 import angr
 import capstone
+import psutil
 
 from .ast import constraint as ir
 from .exceptions import *
@@ -98,8 +99,6 @@ class Tactic:
             predecessor_condition = inspector.get_node_condition(predecessor, jumps_on_branch)
             if predecessor_condition != ir.Top():
                 predecessors_conditions += predecessor_condition
-        # node_constraint = inspector.get_node_condition(node)     
-        # return predecessors_conditions + node_constraint
         return predecessors_conditions
 
 def strip_null(s):
@@ -123,3 +122,11 @@ def vector_to_string(v):
 class FixedValue(int):
     def __repr__(self):
         return "FixedValue({})".format(self)
+
+def close_dangling_files():
+    p = psutil.Process()
+    for f in p.open_files():
+        # print(f)
+        if f.path.startswith("/proc/") and f.path.endswith("/mem"):
+            print("[!] close dangling file: {}".format(f))
+            os.close(f.fd)

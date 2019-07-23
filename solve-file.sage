@@ -19,7 +19,7 @@ parser.add_argument('--checksum', dest='checksum', action='store_true')
 
 args = parser.parse_args()
 magic, checksum = args.magic, args.checksum
-assert magic or checksum
+assert magic or checksum, "usage: provide --magic or --checksum"
 
 with open('sample.tar') as f:
     tar_file = f.read()
@@ -119,12 +119,12 @@ def main():
 
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'
-    addr_call_is_tar = 0x173D6
+    addr_check_checksum_passed = 0x173D6 # mov    rax,QWORD PTR [rbp-0x10]
     if checksum:
         find_addr = 0x173D6 # strcmp(s1, "ustar  \x00")
     if magic:
         find_addr = 0x173F8 # return 3 at is_tar
-    call_is_tar_constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=addr_call_is_tar)[0]
+    call_is_tar_constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=addr_check_checksum_passed)[0]
     assume_checksum = ir.ConstraintList([ir.Assume(call_is_tar_constraints)])
     constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
     constraints += assume_checksum
@@ -140,9 +140,8 @@ def main():
     ### Solve constraints
     ### TODO: auto set initial x 
     if magic:
-        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar  \x00"]), xadapter)
-        model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**\x00"]), xadapter)
-        # model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
+        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+        model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
     if checksum:
         model = NeuSolv(N, L, vector([1000]), xadapter)
         # model = NeuSolv(N, L, zero_vector(8), xadapter)

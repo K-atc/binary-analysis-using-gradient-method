@@ -1,4 +1,5 @@
 import os
+import sys
 import signal
 import subprocess
 import struct
@@ -144,7 +145,7 @@ class Inspector:
             self.process = self.debugger.addProcess(self.pid, False)     
         except (ptrace.error.PtraceError, ProcessExit) as e:
             print("[!] Can't attach to process (pid={}): {}".format(self.pid, e))
-            exit(1)
+            raise e
 
         ### Get base address of traee's main object
         self.tracee_main_object_base_addr = self.get_tracee_main_object_base_addr()
@@ -152,7 +153,12 @@ class Inspector:
         ### Execute to main() to laod all external libraries
         main_addr = self.find_symbol("main").relative_addr
         main_b = self.set_breakpoint(object_name=self.main_file, relative_addr=main_addr)
-        self.cont()
+        try:
+            self.cont()
+        except (ProcessExit) as e:
+            print("[!] Unexpected process exit before reaching main() (pid={}): {}".format(self.pid, e))
+            sys.stdout.flush()
+            raise e
         main_b.desinstall(set_ip=True)
         self.get_tracee_mmap()
 
@@ -183,7 +189,10 @@ class Inspector:
 
         ### Set breakpoint for Assume node
         for node in y_constraints.get_assume_nodes():
-            # print("y_constraints.get_assume_nodes(): node = {}".format(node))
+            ### Skip blanknode
+            if isinstance(node.value, ir.Top):
+                break
+
             if isinstance(node.value, ir.Eq):
                 hook = __assume_eq_hook
             elif isinstance(node.value, ir.Ne):
@@ -241,6 +250,7 @@ class Inspector:
                 if self.debug: print("Recieved event={}".format(event))
                 if self.debug: print("[*] handled signal")
             except ProcessExit as event:
+                sys.stdout.flush()
                 if self.debug: print("Process exited with exitcode {} by signal {}: {}".format(event.exitcode, event.signum, event))
                 self.stop()
                 raise event
@@ -414,9 +424,11 @@ class Inspector:
                         r_ret = ir.Variable(var(next_insn, ret_op), ret_op.size, next_insn_addr, ir.Register(func_ret_reg_name), object_file)
 
                         call_f = ir.Strncmp(f_ret, f_args, insn_relative_address, object_file)
+
                     else:
-                        raise UnhandledCaseError("Unhandled function call '{:#x}: call {}'".format(insn.address, func_name))
-                    
+                        print("[!] Unhandled function call '{:#x}: call {}'".format(insn.address, func_name))
+                        continue
+
                     res.append(ir.Assign(call_f.ret, call_f))
                     res.append(ir.Eq(r_ret, call_f.ret))
             return res

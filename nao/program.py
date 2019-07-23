@@ -1,8 +1,10 @@
 import subprocess
 import functools
 import time
+import sys
 
 from ptrace.debugger.process_event import ProcessExit
+from ptrace.error import PtraceError
 
 from .inspector import Inspector
 from .exceptions import * # pylint: disable=W0614
@@ -56,18 +58,21 @@ class Program:
         assert isinstance(y_constraints, ir.ConstraintList)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
 
-        self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
-        try:
-            retry_flag = True
-            while retry_flag:
-                retry_flag = False
+        while True:
+            try:
                 self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
-        except ProcessExit as e:
-            print("[!] Unexpected Exception: {}".format(e))
-            self.inspector.stop()
-            time.sleep(1.0)
-            print("[!] Retrying run()")
-            retry_flag = True
+                break
+            except (ProcessExit, PtraceError) as e:
+                print("[!] Unexpected Exception at program.call(): {}".format(e))
+                self.inspector.stop()
+                time.sleep(1.0)
+                print("[!] Retrying run()")
+                sys.stdout.flush()
+                continue
+            except Exception as e:
+                print("[!] Unhandled exception at program.call(): {} (type={})".format(e, type(e)))
+                sys.stdout.flush()
+                exit(1)
 
         res = self.inspector.collect(y_constraints)
         self.inspector.stop()

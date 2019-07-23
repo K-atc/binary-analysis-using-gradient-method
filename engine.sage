@@ -1,12 +1,14 @@
 #!/usr/bin/sage
 #coding: utf8
+import sys
+
 from nao.Statistics import Statistics
-# from joblib import Parallel, delayed
+from nao.util import close_dangling_files
 
 stat = Statistics()
 
 def D_x_f(f, x):
-    @parallel(2)
+    @parallel(8)
     def __row(i):
         dxi = zero_vector(n)
         dxi[i] = 1
@@ -25,18 +27,6 @@ def D_x_f(f, x):
     for (_, x) in sorted(list(__row(range(n)))):
         assert x is not 'NO DATA', 'Exception occured in this thread'
         res.append(x)
-
-    # NOTE: Calcuate transpose of $D_x f$
-    # res = []
-    # for i in range(n):
-    #     dxi = zero_vector(n) # pylint: disable=E0602
-    #     dxi[i] = 1
-    #     f_x_plus_dxi = f(x + dxi)
-    #     f_x = f(x)
-    #     row = []
-    #     for j in range(m):
-    #         row.append((f_x_plus_dxi[j] - f_x[j]) / dxi.norm())
-    #     res.append(row)
 
     return matrix(res).transpose()
 
@@ -77,6 +67,7 @@ def NeuSolv(N, L, x0, xadapter):
         try:
             grad_L_N_x = grad_L(*y[k]) * D_x_f(N, x[k])
         except Exception as e:
+            sys.stdout.flush()
             # print("grad_L(*y[k]) = {}".format(grad_L(*y[k])))
             # print("D_x_f(N, x[k]) = {}".format(D_x_f(N, x[k])))
             raise e
@@ -94,5 +85,7 @@ def NeuSolv(N, L, x0, xadapter):
         #     gamma *= 0.95
 
         stat.lap_end()
+
+        close_dangling_files()
 
     return None
