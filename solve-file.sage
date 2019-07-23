@@ -8,7 +8,7 @@ import argparse
 
 from engine import NeuSolv, stat
 from nao.fs import FileSystem
-from nao.util import strip_null, Tactic
+from nao.util import get_addr_from_env, strip_null, Tactic
 from nao.program import Program, X
 from nao.ast import constraint as ir
 from nao.exceptions import UnhandledCaseError
@@ -58,7 +58,7 @@ def xadapter(v):
         ### FIXME: arg[0] should use fs.path('sample.tar')
         fs = FileSystem('./fs-file/')
         fs.create('test.tar', content)
-        return X(args=[fs.path('test.tar')], files=fs, env={'LD_LIBRARY_PATH': '/vagrant/sample/'}) # sage var -> program input
+        return X(args=[fs.path('test.tar')], files=fs, env={'LD_LIBRARY_PATH': os.environ['LD_LIBRARY_PATH']}) # sage var -> program input
     except Exception as e:
         import traceback
         print("\nException: {} {}".format(e.__class__.__name__, e))
@@ -111,19 +111,16 @@ def yadapter(constraint, y):
         exit(1)
 
 def main():
-    ### Export Environment Variable
-    os.environ['LD_LIBRARY_PATH'] = '/vagrant/sample/'
-
     ### Load analysis target
     p = Program("./sample/file", xadapter, yadapter, debug=False)
 
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'
-    addr_check_checksum_passed = 0x173D6 # mov    rax,QWORD PTR [rbp-0x10]
+    addr_check_checksum_passed = get_addr_from_env('ADDR_CHECKSUM_PASSED') # 0x173D6 # mov    rax,QWORD PTR [rbp-0x10]
     if checksum:
-        find_addr = 0x173D6 # strcmp(s1, "ustar  \x00")
+        find_addr = addr_check_checksum_passed
     if magic:
-        find_addr = 0x173F8 # return 3 at is_tar
+        find_addr = get_addr_from_env('ADDR_RET_3') # 0x173F8 # return 3 at is_tar
     call_is_tar_constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=addr_check_checksum_passed)[0]
     assume_checksum = ir.ConstraintList([ir.Assume(call_is_tar_constraints)])
     constraints = p.get_constraints(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
@@ -141,9 +138,10 @@ def main():
     ### TODO: auto set initial x 
     if magic:
         # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
-        model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
+        # model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
+        model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
     if checksum:
-        model = NeuSolv(N, L, vector([1000]), xadapter)
+        model = NeuSolv(N, L, vector([4650]), xadapter)
         # model = NeuSolv(N, L, zero_vector(8), xadapter)
 
     print("=" * 8)

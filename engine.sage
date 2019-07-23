@@ -8,7 +8,7 @@ from nao.util import close_dangling_files
 stat = Statistics()
 
 def D_x_f(f, x):
-    @parallel(8)
+    @parallel()
     def __row(i):
         dxi = zero_vector(n)
         dxi[i] = 1

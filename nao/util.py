@@ -130,3 +130,11 @@ def close_dangling_files():
         if f.path.startswith("/proc/") and f.path.endswith("/mem"):
             print("[!] close dangling file: {}".format(f))
             os.close(f.fd)
+
+def get_addr_from_env(key):
+    try:
+        v = os.environ[key]
+        return int(v, 16)
+    except KeyError as e:
+        print("[!] Environment variable {} is not set".format(key))
+        raise e
