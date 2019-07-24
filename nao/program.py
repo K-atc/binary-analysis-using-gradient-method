@@ -63,10 +63,10 @@ class Program:
                 self.inspector.run(args=x.args, stdin=x.stdin, files=x.files, env=x.env)
                 break
             except (ProcessExit, PtraceError) as e:
-                print("[!] Unexpected Exception at program.call(): {}".format(e))
+                if self.debug: print("[!] Exception at program.call(): {}".format(e))
                 self.inspector.stop()
                 time.sleep(1.0)
-                print("[!] Retrying run()")
+                if self.debug: print("[!] Retrying run()")
                 sys.stdout.flush()
                 continue
             except Exception as e:

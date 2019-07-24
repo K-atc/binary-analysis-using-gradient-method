@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import os
 from nao.util import Tactic
 from nao.inspector import Inspector
 
@@ -13,7 +14,7 @@ def test_file():
     cond = inspector.get_condition_at(Tactic.near_path_constraint, object_name=name_libmagic_so, relative_addr=find_addr)
     print("post condition = {}".format(cond))
 
-    inspector.run(args=["/vagrant/sample.tar"], env={'LD_LIBRARY_PATH': '/vagrant/sample/'})
+    inspector.run(args=["./sample.tar"], env={'LD_LIBRARY_PATH': os.environ['LD_LIBRARY_PATH']})
     return inspector.collect(cond)
 
 if __name__ == "__main__":
