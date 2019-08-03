@@ -73,7 +73,7 @@ Vagrant.configure("2") do |config|
     pip install -r \~vagrant/requirements.txt
     pip3 install -r \~vagrant/requirements.txt
 
-    # Install sagemath
+    ### Install sagemath
     echo "[*] Install sagemath"
     # wget -q http://ftp.riken.jp/sagemath/linux/64bit/sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
     mkdir -p /opt/SageMath
@@ -84,6 +84,10 @@ Vagrant.configure("2") do |config|
     echo "alias sage=/opt/SageMath/sage" >> \~vagrant/.bashrc
     sage -c 'exit'
     sage -sh -c 'pip install -r ~vagrant/requirements.txt'
+
+    ### Install gdb-peda
+    git clone https://github.com/longld/peda.git \~vagrant/bin/peda
+    echo "source \~vagrant/bin/peda/peda.py" >> \~/.gdbinit
   SHELL
 
   config.trigger.after :up do |trigger|

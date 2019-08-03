@@ -54,52 +54,6 @@ def bytes_to_uint(p, size):
         return struct.unpack("<Q", p)[0]
     raise UnhandledCaseError
 
-### REFECTOR: tectic.py
-class Tactic:
-    @staticmethod
-    def near_path_constraint(inspector, node):
-        print("[*] near_path_constraint(node={})".format(node))
-        # print("node.predecessors = {}".format(node.predecessors))
-        predecessors = []
-        if node.predecessors:
-            predecessors += node.predecessors
-
-            # If predecessor is called function node, add function call node as predecessor
-            for pnode in node.predecessors:
-                print("[*] {} -> successors = {}".format(pnode, pnode.successors))
-                if pnode.addr == pnode.function_address: # If p is entory node of calld function,
-                    prev_node = inspector.get_prev_node(node)
-                    if prev_node:
-                        predecessors.append(prev_node) # add function call node as predecessor.
-                        if prev_node.predecessors:
-                            predecessors += prev_node.predecessors
-                    break
-        # import ipdb; ipdb.set_trace()
-
-        ### NOTE: Incerrect implementation for get_prev_node()
-        for pnode in node.predecessors:
-            prev = inspector.get_prev_node(pnode)
-            if prev:
-                predecessors.append(prev)
-
-        predecessors_conditions = ir.ConstraintList()
-        predecessors = set(predecessors)
-        print("[*] Tactic.near_path_constraint: predecessors = {}".format(predecessors))
-        for predecessor in predecessors:
-            assert predecessor is not None
-            if predecessor.is_simprocedure: # skip symbolic procedure (simprocedure is introduced by angr)
-                continue
-            jumps_on_branch = False
-            if len(predecessor.successors) == 2: # Conditional Branch
-                # import ipdb; ipdb.set_trace()
-                if predecessor.addr + predecessor.size == node.addr: # takes no jump (sequential nodes)
-                    jumps_on_branch = False
-                else:
-                    jumps_on_branch = True
-            predecessor_condition = inspector.get_node_condition(predecessor, jumps_on_branch)
-            if predecessor_condition != ir.Top():
-                predecessors_conditions += predecessor_condition
-        return predecessors_conditions
 
 def strip_null(s):
     first_null_pos = s.find('\x00')
@@ -138,3 +92,23 @@ def get_addr_from_env(key):
     except KeyError as e:
         print("[!] Environment variable {} is not set".format(key))
         raise e
+
+def round_real_to_uint(i):
+    return int(abs(round(i)))
+
+def round_real_to_char(i):
+    i = round_real_to_uint(i)
+    if i < (1 << 8):
+        return struct.pack('<B', i)
+    if i < (1 << 16):
+        return struct.pack('<H', i)
+    if i < (1 << 32):
+        return struct.pack('<I', i)
+    if i < (1 << 64):
+        return struct.pack('<Q', i)
+
+def vectorize(a):
+    res = []
+    for v in list(a):
+        res.append(ord(v))
+    return vector(res) # pylint: disable=E0602

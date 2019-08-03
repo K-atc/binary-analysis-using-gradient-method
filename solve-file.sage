@@ -1,14 +1,13 @@
 import os, sys
 import struct
-import numbers
 from pprint import pformat
-import ctypes
 import numpy as np
 import argparse
 
 from engine import NeuSolv, stat
 from nao.fs import FileSystem
-from nao.util import get_addr_from_env, strip_null, Tactic
+from nao.util import get_addr_from_env, strip_null, round_real_to_char, round_real_to_uint, vectorize
+from nao.tactics import Tactic
 from nao.program import Program, X
 from nao.ast import constraint as ir
 from nao.exceptions import UnhandledCaseError
@@ -25,20 +24,6 @@ with open('sample.tar') as f:
     tar_file = f.read()
 
 def xadapter(v):
-    def round_real_to_uint(i):
-        return int(abs(round(i)))
-
-    def round_real_to_char(i):
-        i = round_real_to_uint(i)
-        if i < (1 << 8):
-            return struct.pack('<B', i)
-        if i < (1 << 16):
-            return struct.pack('<H', i)
-        if i < (1 << 32):
-            return struct.pack('<I', i)
-        if i < (1 << 64):
-            return struct.pack('<Q', i)
-
     try:
         if magic:
             assert len(v) == 8
@@ -55,7 +40,6 @@ def xadapter(v):
         if magic:
             print("\ts = {!r}".format(s))
 
-        ### FIXME: arg[0] should use fs.path('sample.tar')
         fs = FileSystem('./fs-file/')
         fs.create('test.tar', content)
         return X(args=[fs.path('test.tar')], files=fs, env={'LD_LIBRARY_PATH': os.environ['LD_LIBRARY_PATH']}) # sage var -> program input
@@ -68,51 +52,9 @@ def xadapter(v):
         import ipdb; ipdb.set_trace()
         exit(1)
 
-def vectorize(a):
-    res = []
-    for v in list(a):
-        res.append(ord(v))
-    return vector(res) # pylint: disable=E0602
-
-### REFACTER: No need to implement yadapter in solver
-def yadapter(constraint, y):
-    try:
-        variables = constraint.get_variables()
-        res = []
-        for v in variables:
-            try:
-                value = y[v.name]
-                if isinstance(value, numbers.Number): # Scalar
-                    if value < 0x100000000: # 32bit int
-                        value = ctypes.c_int(value).value                    
-                    else: # 64bit int
-                        value = ctypes.c_long(value).value
-                    res.append(value)
-                elif len(value) == 1: # array-like object
-                    res.append(ord(value))
-                else: # sage.symbolic.expression.Expression ?
-                    res.append(value)
-                    # raise UnhandledCaseError("v={}".format(v))
-            except KeyError:
-                ### NOTE: Program does not reached the block.
-                if True: print("[!] yadapter(): Value of {} not found: {}".format(v.name, v))
-                exit(1)
-        assert len(res) == len(variables)
-        return res
-    except Exception as e:
-        import traceback
-        print("\nException: {} {}".format(e.__class__.__name__, e))
-        traceback.print_exc()
-        print("")
-        print("-> value = {!r}".format(value))
-        print("-> y = {}".format(y))
-        print("-> variables = {}".format(variables))
-        import ipdb; ipdb.set_trace()
-        exit(1)
-
 def main():
     ### Load analysis target[]
-    p = Program("./sample/file", xadapter, yadapter, debug=False)
+    p = Program("./sample/file", xadapter, debug=False)
 
     ### Generate post condition y
     name_libmagic_so = 'libmagic.so.1'

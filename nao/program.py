@@ -11,6 +11,7 @@ from .exceptions import * # pylint: disable=W0614
 from .ast import constraint as ir
 from .encoder import Encode, encode_constraint_to_loss_function_ast
 from .evaluate import evaluate_constraint_ast
+from .y import yadapter
 
 
 class X():
@@ -28,12 +29,11 @@ class X():
 class Program:
     # @param xadapter encodes vector to vales of x variables (program inputs)
     # @param yadapter encodes values of y variables to vector
-    def __init__(self, program, xadapter, yadapter, debug=False):
+    def __init__(self, program, xadapter, debug=False):
         assert isinstance(program, str), "'program` must be a path to program"
         assert callable(xadapter), "`adapter` must be a fucntion"
         self.program = program
         self.xadapter = xadapter
-        self.yadapter = yadapter
         # self.inspector = Inspector(program, debug=True)
         self.inspector = Inspector(program, debug=False)
         self.debug = debug
@@ -85,7 +85,7 @@ class Program:
         context = self.call(constraint, self.xadapter(x))
         context = evaluate_constraint_ast(constraint, context)
         loss_function_ast = encode_constraint_to_loss_function_ast(constraint)
-        return self.yadapter(loss_function_ast, context)
+        return yadapter(loss_function_ast, context)
 
     def run(self, x):
         assert(isinstance(x, X))
