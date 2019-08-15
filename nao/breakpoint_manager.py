@@ -27,8 +27,11 @@ class BreakpointManager(object):
             self.inspector.set_breakpoint(object_name=object_name, relative_addr=relative_addr)
             self.already_set.add((object_name, relative_addr))
         
-        ### Add hook
+        ### Register hook
         rebased_addr = self.inspector.get_tracee_rebased_addr(object_name=object_name, relative_addr=relative_addr)
+        self.set_hook(rebased_addr, hook)
+
+    def set_hook(self, rebased_addr, hook):
         if rebased_addr in self.hook:
             self.hook[rebased_addr].add(hook)
         else:

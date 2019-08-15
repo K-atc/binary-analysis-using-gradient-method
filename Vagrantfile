@@ -93,7 +93,7 @@ Vagrant.configure("2") do |config|
   config.trigger.after :up do |trigger|
     trigger.name = "Finished Message"
     trigger.info = "Machine is up!"
-    trigger.run_remote = {inline: "echo 0 > /proc/sys/kernel/yama/ptrace_scope"}
-    trigger.run_remote = {inline: "ulimit -Sn 10000"}
+    trigger.run_remote = {inline: "echo 1 > /proc/sys/kernel/yama/ptrace_scope"}
+    # trigger.run_remote = {inline: "ulimit -Sn 10000"}
   end
 end

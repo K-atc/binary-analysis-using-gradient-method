@@ -47,12 +47,10 @@ class BinOp(Ast):
         return "{}({}, {})".format(self.kind, self.left, self.right)
  
 class Top(Term):
-    def __init__(self):
-        self.kind = self.__class__.__name__
+    pass
 
 class Bottom(Term):
-    def __init__(self):
-        self.kind = self.__class__.__name__
+    pass
 
 class Value(UniOp):
     def __repr__(self):
@@ -90,7 +88,6 @@ if __name__ == "__main__":
 
     print("[*] Compare ast")
     assert (Top().kind == Bottom().kind) == False
-    print(Top().__eq__(Bottom()))
     assert Top().__eq__(Bottom()) == False
     assert((Top() == Bottom()) == False)
     assert((Eq(Top(), Bottom()) == Eq(Bottom(), Top())) == False)

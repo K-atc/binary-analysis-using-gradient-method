@@ -55,8 +55,11 @@ class Program:
 
     def call(self, y_constraints, x):
         if self.debug: print("[*] call(y_constraints=..., x={})".format(x))
-        assert isinstance(y_constraints, ir.ConstraintList)
+        assert isinstance(y_constraints, ir.ConstraintIR)
         assert isinstance(x, X), "x must be instance of X: x = {}".format(x)
+
+        if not isinstance(y_constraints, ir.ConstraintList):
+            y_constraints = ir.ConstraintList([y_constraints])
 
         while True:
             try:
@@ -69,6 +72,8 @@ class Program:
                 if self.debug: print("[!] Retrying run()")
                 sys.stdout.flush()
                 continue
+            except AssertionError as e:
+                raise e
             except Exception as e:
                 print("[!] Unhandled exception at program.call(): {} (type={})".format(e, type(e)))
                 sys.stdout.flush()

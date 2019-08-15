@@ -42,7 +42,7 @@ class FileSystem:
             os.mkdir(path_dir)
         with open(self.base_dir + path, "wb") as f:
             f.write(data)
-        return None
+        return self.open(path)
     
     def remove(self, path):
         if path in self.handle:

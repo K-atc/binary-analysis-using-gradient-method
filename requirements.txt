@@ -4,8 +4,8 @@ psutil
 
 python-ptrace
 angr
+lief
 
 # frida-tools
-# lief
 # r2pipe
 # angr-utils

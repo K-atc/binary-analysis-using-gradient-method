@@ -17,6 +17,7 @@ from .ast import constraint as ir
 from .exceptions import *
 from .fs import FileSystem
 
+### REFACTOR: rename var to var_name
 def var(insn, op):
     addr = insn.address
     var_type = "undefined"

@@ -13,6 +13,8 @@ def debugger_example(pid):
     print("Attach the running process %s" % pid)
     process = debugger.addProcess(pid, False)
 
+    print("IP = {:#x}".format(process.getInstrPointer()))
+
     mmap = process.readMappings()
     # print("memory mapping = {}".format(mmap))
     for x in mmap:

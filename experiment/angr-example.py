@@ -8,36 +8,37 @@ addr = lambda symbol: proj.loader.find_symbol(symbol).relative_addr
 def to_hex_list(l):
     return list(map(lambda x: hex(x), l))
 
+### Load binary
 proj = angr.Project('sample/simple-if-statement-tree', load_options={'auto_load_libs': False})
 
-# Generate a static CFG
+### Generate a static CFG
 cfg = proj.analyses.CFGFast()
 
-print("entry = {:#x}".format(proj.entry))
+### Get a node
+main_addr = proj.loader.find_symbol('main').rebased_addr
+node = cfg.get_any_node(main_addr + 0xad, anyaddr=True)
+assert node is not None
+print("node = {}".format(node))
 
-print("graph:")
-print(cfg.graph)
+### Print infomation of the node
+# print(dir(node))
+print("node.addr = {:#x}".format(node.addr))
+print("node.predecessors = {}".format(node.predecessors))
+print("node.successors = {}".format(node.successors))
+# print("node.irsb: {}".format(node.irsb))
+print("node.block.pp: ".format())
+node.block.pp()
+print("node.block.capstone.insns = {}".format(list(node.block.capstone.insns)))
+exit(1)
 
-main_node = cfg.get_any_node(proj.loader.find_symbol('main').rebased_addr + (0x7d6 - 0x72d))
-print(main_node)
-
-print("main = {:#x}".format(addr('main')))
-
-print(dir(main_node))
-print("node.irsb = {}".format(main_node.irsb))
-print("node.addr = {:#x}".format(main_node.addr))
-print("node.predecessors = {}".format(main_node.predecessors))
-print("node.instruction_addrs = {}".format(to_hex_list(main_node.instruction_addrs)))
-print("node.byte_string = {}".format(to_hex_list(main_node.byte_string)))
-# print("node.to_codenode() = {}".format(main_node.to_codenode()))
-print("node.successors = {}".format(main_node.successors))
+print("node.byte_string = {}".format(to_hex_list(node.byte_string)))
 
 angrutils.plot_cfg(cfg, "simple-if-statement-tree-cfg", asminst=True, remove_imports=True, remove_path_terminator=True)  
 
 
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 md.detail = True
-for insn in md.disasm(main_node.byte_string, main_node.instruction_addrs[0] - proj.loader.main_object.min_addr):
+for insn in md.disasm(node.byte_string, node.instruction_addrs[0] - proj.loader.main_object.min_addr):
     print("0x%x:\t%s\t%s" %(insn.address, insn.mnemonic, insn.op_str))
     # print("dir(insn) = {}".format(dir(insn)))
     print("insn.id = {}".format(insn.id))

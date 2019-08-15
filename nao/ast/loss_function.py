@@ -103,6 +103,8 @@ class Vector(Variable):
 
 
 if __name__ == "__main__":
+    print("[*] repr")
+    print(Lor(Eq(Variable('x'), Value(0)), Lt(Variable('y'), Value(1))))
     print("[*] get_variables")
     v1 = Variable('v1')
     assert(Eq(v1, v1).get_variables() == VariableList([v1]))

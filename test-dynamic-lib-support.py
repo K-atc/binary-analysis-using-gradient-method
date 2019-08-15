@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import os
-from nao.util import Tactic
+from nao.tactics import Tactic
 from nao.inspector import Inspector
 
 def test_file():

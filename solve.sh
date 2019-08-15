@@ -13,7 +13,8 @@ cd - > /dev/null
 
 rm -f *.sage.py
 
-rm -rf /fs-Inspector/*
+rm -rf ./fs-*/*
 
 sage -preparse engine.sage && mv engine.sage.py engine.py
-/usr/bin/time -v sage $@
+sage $@
+# /usr/bin/time -v sage $@

@@ -64,11 +64,7 @@ class BinOp(ast.BinOp, ConstraintIR):
         return VariableList(set(self.left.get_assume_nodes() + self.right.get_assume_nodes()))
 
 class VariableType(ast.Ast):
-    def __init__(self):
-        self.kind = self.__class__.__name__
-
-    def __repr__(self):
-        return "{}".format(self.kind)
+    pass
 
 class Register(VariableType):
     def __init__(self, name):
@@ -113,7 +109,6 @@ class NullType(VariableType):
     pass
 
 class Variable(ConstraintIR):
-    ### TODO: object name where this variable locates
     def __init__(self, name, size, addr, vtype, objfile=None):
         assert isinstance(vtype, VariableType)
         assert objfile is None or isinstance(objfile, str)

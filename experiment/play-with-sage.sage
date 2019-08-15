@@ -5,8 +5,6 @@
 
 # E = EuclideanSpace(3)
 
-var('x y')
-
 f(x, y) = x ^ 2 + x * y
 # f = E.scalar_field(x ** 2 + x * y, name='f')
 
