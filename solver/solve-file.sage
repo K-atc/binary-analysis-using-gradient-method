@@ -4,7 +4,7 @@ from pprint import pformat
 import numpy as np
 import argparse
 
-from engine import NeuSolv, stat
+from nao.engine import NeuSolv, stat
 from nao.fs import FileSystem
 from nao.util import get_addr_from_env, strip_null, round_real_to_char, round_real_to_uint, vectorize
 from nao.tactics import Tactic
@@ -15,6 +15,7 @@ from nao.exceptions import UnhandledCaseError
 parser = argparse.ArgumentParser()
 parser.add_argument('--magic', dest='magic', action='store_true')
 parser.add_argument('--checksum', dest='checksum', action='store_true')
+parser.add_argument('--init', dest='init')
 
 args = parser.parse_args()
 magic, checksum = args.magic, args.checksum
@@ -79,9 +80,15 @@ def main():
     ### Solve constraints
     ### TODO: auto set initial x 
     if magic:
-        # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
-        # model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
-        model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+        if args.init:
+            print("[*] args.init = {!r}".format(args.init))
+            x0 = vector([ord(x) for x in args.init])
+        else:
+            # model = NeuSolv(N, L, vector([ord(x) for x in "ustar**\x00"]), xadapter)
+            # model = NeuSolv(N, L, vector([ord(x) for x in "USTAR**Z"]), xadapter)
+            x0 = vector([ord(x) for x in "ustar**\x00"])
+        print("[*] x0 = {}".format(x0))
+        model = NeuSolv(N, L, x0, xadapter)
     if checksum:
         model = NeuSolv(N, L, vector([4650]), xadapter)
         # model = NeuSolv(N, L, zero_vector(8), xadapter)
@@ -103,6 +110,7 @@ def main():
 
     print("-" * 8)
     if stat.lap_time:
+        print("Number of epics: {}".format(len(stat.lap_time)))
         print("Measured epics time:")
         print("\tmean   = {} sec".format(np.mean(stat.lap_time)))
         print("\tmedian = {} sec".format(np.median(stat.lap_time)))
@@ -115,6 +123,8 @@ if __name__ == "__main__":
     found = main()
     ### Tell CI of result
     if found: 
+        print("[*] OK")
         exit(0)
     else:
+        print("[!] NG")
         exit(1)

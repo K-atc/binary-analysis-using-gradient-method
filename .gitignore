@@ -15,6 +15,9 @@ proj.loader.all_object
 *.png
 *.s
 pin-*
+patch-nm.py
+sample/nm.patched
+setup.sh
 
 /sage-8.7-Ubuntu_18.04-x86_64.tar.bz2
 /engine.py

@@ -11,9 +11,13 @@ cd sample
 make
 cd - > /dev/null
 
-rm -f *.sage.py
+### Remove virtual file system
+rm -rf ./fs-*
 
-rm -rf ./fs-*/*
+export PYTHONPATH=$PWD
 
-sage -preparse engine.sage && mv engine.sage.py engine.py
-/usr/bin/time -v sage $@
+if [ -z $TIME ]; then
+    sage $@
+else
+    /usr/bin/time -v sage $@
+fi

@@ -1,5 +1,7 @@
-#!/usr/bin/sage
 #coding: utf8
+
+from sage.all_cmdline import *   # import sage library
+
 import sys
 
 from nao.statistics import Statistics
@@ -12,7 +14,7 @@ def D_x_f(f, x):
     @parallel()
     def __row(i):
         dxi = zero_vector(n)
-        dxi[i] = 1
+        dxi[i] = Integer(1)
         f_x_plus_dxi = f(x + dxi)
         f_x = f(x)
         m = len(f_x)
@@ -32,8 +34,8 @@ def NeuSolv(N, L, x0, xadapter):
     assert callable(N)
     assert callable(L)
 
-    epsilon = 0.1 # Learning Late
-    gamma = 0.9 # momentum
+    epsilon = RealNumber('0.1') # Learning Late
+    gamma = RealNumber('0.9') # momentum
 
     print("\n[*] === NeuSolv() ===")
     
@@ -41,13 +43,13 @@ def NeuSolv(N, L, x0, xadapter):
     print("L = {}".format(L))
     print("∇L = {}".format(grad_L))
 
-    max_trial = 2000
-    x, y = [None for x in range(max_trial + 1)], [None for x in range(max_trial + 1)]
+    max_trial = Integer(5000)
+    x, y = [None for x in range(max_trial + Integer(1))], [None for x in range(max_trial + Integer(1))]
 
-    x[0] = x0
-    x[1] = x0
+    x[Integer(0)] = x0
+    x[Integer(1)] = x0
 
-    for k in range(1, max_trial):
+    for k in range(Integer(1), max_trial):
         stat.lap_start()
 
         ### Routine
@@ -58,7 +60,8 @@ def NeuSolv(N, L, x0, xadapter):
 
         ### Check current loss
         print("L(y[{}])) = {}".format(k, L(*y[k])))
-        if L(*y[k]) <= 1e-2: 
+        if L(*y[k]) <= RealNumber('1e-2'): 
+            stat.lap_end()
             return x[k]
 
         ### Update x
@@ -70,20 +73,12 @@ def NeuSolv(N, L, x0, xadapter):
             # print("D_x_f(N, x[k]) = {}".format(D_x_f(N, x[k])))
             raise e
 
-        x[k + 1] = x[k] + gamma * (x[k] - x[k - 1]) - epsilon * grad_L_N_x # Momentum
+        x[k + Integer(1)] = x[k] + gamma * (x[k] - x[k - Integer(1)]) - epsilon * grad_L_N_x # Momentum
         # x[k + 1] = x[k] - epsilon * grad_L_N_x # Normal gradient (SGD)
-
-        # ### Check if updating x is stopped
-        # if k > 2 and x[k + 1] == x[k]:
-        #     return None
-
-        # ### Slow down learning late in late epic
-        # if L(*y[k]) < 3.0:
-        #     epsilon *= 0.95
-        #     gamma *= 0.95
 
         stat.lap_end()
 
         close_dangling_files()
 
     return None
+
