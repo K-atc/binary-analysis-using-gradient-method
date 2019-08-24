@@ -7,6 +7,7 @@ from nao.util import close_dangling_files
 
 stat = Statistics()
 
+# NOTE: Calcuate transpose of $D_x f$
 def D_x_f(f, x):
     @parallel()
     def __row(i):
@@ -14,20 +15,17 @@ def D_x_f(f, x):
         dxi[i] = 1
         f_x_plus_dxi = f(x + dxi)
         f_x = f(x)
+        m = len(f_x)
         row = []
         for j in range(m):
             row.append((f_x_plus_dxi[j] - f_x[j]) / dxi.norm())
         return row
 
     n = len(x)
-    m = len(f(x))
-
-    # NOTE: Calcuate transpose of $D_x f$
     res = []
-    for (_, x) in sorted(list(__row(range(n)))):
-        assert x is not 'NO DATA', 'Exception occured in this thread'
-        res.append(x)
-
+    for (_, d_i) in sorted(list(__row(range(n)))):
+        assert d_i is not 'NO DATA', 'Exception occured in this thread'
+        res.append(d_i)
     return matrix(res).transpose()
 
 def NeuSolv(N, L, x0, xadapter):

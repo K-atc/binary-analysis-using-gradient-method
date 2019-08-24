@@ -1,3 +1,4 @@
+#encoding:utf-8
 from .ast import constraint as ir
 
 class Tactic:
@@ -43,5 +44,6 @@ class Tactic:
                     jumps_on_branch = True
             predecessor_condition = inspector.get_node_condition(predecessor, jumps_on_branch)
             if predecessor_condition != ir.Top():
+                ### TODO: 1つのノードにpredecessor が複数のときはOrでまとめるべき？
                 predecessors_conditions += predecessor_condition
         return predecessors_conditions

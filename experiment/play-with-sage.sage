@@ -5,6 +5,19 @@
 
 # E = EuclideanSpace(3)
 
+print("[*] vector")
+
+v0 = zero_vector(3)
+v1 = vector([-1, 0, 1])
+print("v0 = {}".format(v0))
+print("v1 = {}".format(v1))
+print("v1 - v0 = {}".format(v1 - v0))
+print("|v1| = {}".format(v1.norm()))
+print("v1 / |v1| = {}".format(v1/v1.norm()))
+
+print("")
+print("[*] function")
+
 f(x, y) = x ^ 2 + x * y
 # f = E.scalar_field(x ** 2 + x * y, name='f')
 

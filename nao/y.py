@@ -9,10 +9,11 @@ def yadapter(constraint, y):
             try:
                 value = y[v.name]
                 if isinstance(value, numbers.Number): # Scalar
-                    if value < 0x100000000: # 32bit int
-                        value = ctypes.c_int(value).value                    
-                    else: # 64bit int
-                        value = ctypes.c_long(value).value
+                    if isinstance(value, int) or isinstance(value, long):
+                        if value < 0x100000000: # 32bit int
+                            value = ctypes.c_int(value).value                    
+                        else: # 64bit int
+                            value = ctypes.c_long(value).value
                     res.append(value)
                 elif len(value) == 1: # array-like object
                     res.append(ord(value))

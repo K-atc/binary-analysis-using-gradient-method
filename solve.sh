@@ -16,5 +16,4 @@ rm -f *.sage.py
 rm -rf ./fs-*/*
 
 sage -preparse engine.sage && mv engine.sage.py engine.py
-sage $@
-# /usr/bin/time -v sage $@
+/usr/bin/time -v sage $@

@@ -109,6 +109,12 @@ def main():
         print("\tstd.   = {} sec".format(np.std(stat.lap_time)))
 
     print("-" * 8 + "\n")
+    return (model is not None)
 
 if __name__ == "__main__":
-    main()
+    found = main()
+    ### Tell CI of result
+    if found: 
+        exit(0)
+    else:
+        exit(1)
