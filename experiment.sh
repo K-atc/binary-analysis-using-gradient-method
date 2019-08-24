@@ -20,7 +20,7 @@ solve_file_with_init() {
     init=$2
     save_dir="$1/$init/"
     mkdir -p $save_dir
-    TIME=on ./solve.sh solver/solve-file.sage --magic --init $init | tee $save_dir/solve.log
+    TIME=on ./solve.sh solver/solve-file.sage --magic --init $init 2>&1 | tee $save_dir/solve.log
 }
 
 source solver/solve-file.env
