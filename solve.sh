@@ -1,5 +1,7 @@
 #!/bin/bash 
 
+echo "[*]" $0 $@
+
 if [ $# -eq 0 ]; then
     echo "usage: $0 SOLVER_SAGE_FILE"
     exit
